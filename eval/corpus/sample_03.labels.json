@@ -1,0 +1,36 @@
+{
+  "description": "shell=True with untrusted input enables command injection; run_diagnostic is even worse.",
+  "expected": [
+    {
+      "path": "app/net.py",
+      "line_range": [
+        6,
+        6
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "command injection",
+        "shell=true",
+        "shell injection",
+        "subprocess",
+        "untrusted"
+      ]
+    },
+    {
+      "path": "app/net.py",
+      "line_range": [
+        9,
+        10
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "command injection",
+        "getoutput",
+        "shell",
+        "untrusted"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "description": "TOCTOU race: exists() + open() is not atomic. The added sleep widens the window. Should use O_EXCL / open(path, 'x').",
+  "expected": [
+    {
+      "path": "app/lockfile.py",
+      "line_range": [
+        7,
+        13
+      ],
+      "category": "correctness",
+      "severity": "high",
+      "keywords": [
+        "toctou",
+        "race",
+        "atomic",
+        "o_excl",
+        "check-then-use"
+      ]
+    }
+  ]
+}

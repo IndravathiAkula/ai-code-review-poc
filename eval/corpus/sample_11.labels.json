@@ -1,0 +1,23 @@
+{
+  "description": "SSRF \u2014 user-supplied URL is fetched with no allowlist. Attacker can reach cloud metadata (169.254.169.254), internal services, file:// etc.",
+  "expected": [
+    {
+      "path": "api/proxy.py",
+      "line_range": [
+        7,
+        11
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "ssrf",
+        "server-side request forgery",
+        "allowlist",
+        "metadata",
+        "internal",
+        "url",
+        "scheme"
+      ]
+    }
+  ]
+}

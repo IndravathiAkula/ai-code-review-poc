@@ -1,0 +1,17 @@
+diff --git a/requirements.txt b/requirements.txt
+index 1111111..2222222 100644
+--- a/requirements.txt
++++ b/requirements.txt
+@@ -1,6 +1,6 @@
+-requests==2.31.0
+-PyYAML==6.0.1
+-flask==3.0.2
+-SQLAlchemy==2.0.25
+-pytest==8.1.1
+-rich==13.7.0
++requests==2.32.3
++PyYAML==6.0.2
++flask==3.0.3
++SQLAlchemy==2.0.36
++pytest==8.3.3
++rich==13.9.4

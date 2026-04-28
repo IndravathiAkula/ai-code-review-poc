@@ -1,0 +1,37 @@
+{
+  "description": "yaml.load without a safe Loader allows arbitrary object construction (RCE). pickle.loads on attacker-reachable bytes is also RCE.",
+  "expected": [
+    {
+      "path": "app/config.py",
+      "line_range": [
+        6,
+        6
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "yaml.load",
+        "safe_load",
+        "deserialization",
+        "rce",
+        "loader"
+      ]
+    },
+    {
+      "path": "app/config.py",
+      "line_range": [
+        10,
+        11
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "pickle",
+        "deserialization",
+        "rce",
+        "untrusted",
+        "arbitrary code"
+      ]
+    }
+  ]
+}

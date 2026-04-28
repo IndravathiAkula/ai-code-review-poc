@@ -1,0 +1,23 @@
+{
+  "description": "Path traversal \u2014 os.path.join does not prevent '../' escapes; an absolute name replaces BASE entirely.",
+  "expected": [
+    {
+      "path": "app/files.py",
+      "line_range": [
+        8,
+        12
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "path traversal",
+        "directory traversal",
+        "../",
+        "realpath",
+        "abspath",
+        "send_from_directory",
+        "lfi"
+      ]
+    }
+  ]
+}

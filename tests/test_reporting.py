@@ -1,0 +1,163 @@
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from reviewer.reporting import (
+    SUMMARY_TAG, RunSummary, render_markdown, summarize_run,
+    write_artifact, write_step_summary,
+)
+
+
+def _usage(prompt, completion, cost=None, latency=0.5):
+    return {
+        "model": "openai/gpt-4o-mini",
+        "path": "x.py",
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": prompt + completion,
+        "cost_usd": cost,
+        "latency_seconds": latency,
+    }
+
+
+def _findings(*severities):
+    return [{"severity": s, "category": "security",
+             "title": f"f{i}", "explanation": "...", "confidence": 0.9}
+            for i, s in enumerate(severities)]
+
+
+def test_summarize_run_aggregates_token_and_cost_totals():
+    s = summarize_run(
+        model="openai/gpt-4o-mini", repo="o/r", pr_number=42,
+        findings=_findings("high", "high", "critical"),
+        post_report={"posted": 2, "kept": 1, "skipped": 0, "removed_stale": 1},
+        usage_log=[_usage(100, 50, cost=0.0001),
+                   _usage(200, 80, cost=0.0002)],
+        wall_seconds=2.5,
+    )
+    assert s.posted == 2
+    assert s.kept == 1
+    assert s.removed_stale == 1
+    assert s.total_calls == 2
+    assert s.prompt_tokens == 300
+    assert s.completion_tokens == 130
+    assert s.total_tokens == 430
+    assert abs(s.cost_usd - 0.0003) < 1e-9
+    assert s.severity_counts == {"high": 2, "critical": 1}
+    assert s.wall_seconds == 2.5
+
+
+def test_summarize_run_cost_is_none_when_no_priced_calls():
+    s = summarize_run(
+        model="unknown/x", repo="o/r", pr_number=1,
+        findings=[], post_report={},
+        usage_log=[_usage(100, 50, cost=None)],
+        wall_seconds=0.1,
+    )
+    assert s.cost_usd is None
+
+
+def test_summarize_run_handles_empty_usage_log():
+    s = summarize_run(
+        model="x", repo="o/r", pr_number=1,
+        findings=[], post_report={},
+        usage_log=[], wall_seconds=0.0,
+    )
+    assert s.total_calls == 0
+    assert s.total_tokens == 0
+    assert s.cost_usd is None
+
+
+def test_render_markdown_contains_tag_and_key_numbers():
+    s = RunSummary(
+        model="openai/gpt-4o-mini", repo="o/r", pr_number=42,
+        posted=3, kept=2, skipped=0, removed_stale=1,
+        severity_counts={"critical": 1, "high": 2},
+        total_calls=4, prompt_tokens=4200, completion_tokens=1232,
+        total_tokens=5432, cost_usd=0.0009, wall_seconds=2.34,
+    )
+    md = render_markdown(s)
+    assert SUMMARY_TAG in md
+    assert "openai/gpt-4o-mini" in md
+    assert "PR #42" in md
+    assert "5,432" in md  # total tokens with thousands separator
+    assert "4,200" in md  # prompt
+    assert "1,232" in md  # completion
+    assert "1 critical, 2 high" in md
+    assert "$0.0009" in md
+    assert "2.34s" in md
+
+
+def test_render_markdown_unpriced_run_shows_dash():
+    s = RunSummary(
+        model="x", repo="o/r", pr_number=1,
+        posted=0, kept=0, skipped=0, removed_stale=0,
+        severity_counts={}, total_calls=1,
+        prompt_tokens=10, completion_tokens=5, total_tokens=15,
+        cost_usd=None, wall_seconds=0.1,
+    )
+    md = render_markdown(s)
+    assert "—" in md  # unicode em-dash for missing cost
+
+
+def test_render_markdown_severity_breakdown_orders_critical_first():
+    s = RunSummary(
+        model="x", repo="o/r", pr_number=1,
+        posted=0, kept=0, skipped=0, removed_stale=0,
+        severity_counts={"low": 5, "critical": 1, "medium": 3, "high": 2},
+        total_calls=0, prompt_tokens=0, completion_tokens=0,
+        total_tokens=0, cost_usd=None, wall_seconds=0.0,
+    )
+    md = render_markdown(s)
+    # critical -> high -> medium -> low ordering
+    cri = md.find("1 critical")
+    hi = md.find("2 high")
+    me = md.find("3 medium")
+    lo = md.find("5 low")
+    assert cri < hi < me < lo
+
+
+def test_render_markdown_severity_breakdown_none_when_empty():
+    s = RunSummary(
+        model="x", repo="o/r", pr_number=1,
+        posted=0, kept=0, skipped=0, removed_stale=0,
+        severity_counts={}, total_calls=0,
+        prompt_tokens=0, completion_tokens=0, total_tokens=0,
+        cost_usd=None, wall_seconds=0.0,
+    )
+    assert "Severity breakdown:** none" in render_markdown(s)
+
+
+def test_write_step_summary_no_op_when_env_unset():
+    assert write_step_summary("body", env={}) is False
+
+
+def test_write_step_summary_appends_to_file(tmp_path):
+    target = tmp_path / "summary.md"
+    env = {"GITHUB_STEP_SUMMARY": str(target)}
+    assert write_step_summary("first run", env=env) is True
+    assert write_step_summary("second run", env=env) is True
+    text = target.read_text(encoding="utf-8")
+    assert "first run" in text
+    assert "second run" in text
+
+
+def test_write_artifact_writes_summary_and_usage_log_as_json(tmp_path):
+    s = RunSummary(
+        model="x", repo="o/r", pr_number=1,
+        posted=1, kept=0, skipped=0, removed_stale=0,
+        severity_counts={"high": 1}, total_calls=1,
+        prompt_tokens=10, completion_tokens=5, total_tokens=15,
+        cost_usd=0.0001, wall_seconds=0.1,
+    )
+    log = [_usage(10, 5, cost=0.0001)]
+    out = write_artifact(tmp_path / "run.json", s, log)
+    assert out.exists()
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["summary"]["model"] == "x"
+    assert payload["summary"]["total_tokens"] == 15
+    assert len(payload["usage_log"]) == 1
+    assert payload["usage_log"][0]["prompt_tokens"] == 10

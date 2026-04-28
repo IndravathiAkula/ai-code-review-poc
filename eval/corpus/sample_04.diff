@@ -1,0 +1,21 @@
+diff --git a/app/lockfile.py b/app/lockfile.py
+index 1111111..2222222 100644
+--- a/app/lockfile.py
++++ b/app/lockfile.py
+@@ -1,10 +1,16 @@
+ import os
++import time
+ 
+ 
+ def acquire_once(path: str, content: str) -> bool:
+     """Return True if we created the lock file, False otherwise."""
+     if os.path.exists(path):
+         return False
++    # give other callers a chance to notice — keeps tests stable
++    time.sleep(0.01)
+     with open(path, "w") as f:
+         f.write(content)
+     return True
++
++
++LAST_ACQUIRED_AT: float = 0.0

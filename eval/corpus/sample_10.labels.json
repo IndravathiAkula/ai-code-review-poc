@@ -1,0 +1,38 @@
+{
+  "description": "Retry rewrite silently swallows every exception (bare except), loses backoff, returns None on exhaustion. fetch_or_default also swallows without logging.",
+  "expected": [
+    {
+      "path": "app/retry.py",
+      "line_range": [
+        1,
+        7
+      ],
+      "category": "correctness",
+      "severity": "high",
+      "keywords": [
+        "bare except",
+        "swallow",
+        "silent",
+        "backoff",
+        "none",
+        "retry"
+      ]
+    },
+    {
+      "path": "app/retry.py",
+      "line_range": [
+        10,
+        14
+      ],
+      "category": "maintainability",
+      "severity": "medium",
+      "keywords": [
+        "swallow",
+        "log",
+        "silent",
+        "mask",
+        "exception"
+      ]
+    }
+  ]
+}

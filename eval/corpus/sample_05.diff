@@ -1,0 +1,22 @@
+diff --git a/web/user.ts b/web/user.ts
+index 1111111..2222222 100644
+--- a/web/user.ts
++++ b/web/user.ts
+@@ -1,8 +1,15 @@
+ interface User {
+   id: string;
+-  profile: { name: string };
++  profile?: { name?: string };
+ }
+ 
+ export function displayName(user?: User): string {
+-  return user?.profile.name.toUpperCase() ?? "";
++  return user.profile.name.toUpperCase();
+ }
++
++export function greet(user?: User): string {
++  const name = user!.profile!.name!;
++  return `Hello, ${name}`;
++}
++
++export const DEFAULT_USER = null as unknown as User;

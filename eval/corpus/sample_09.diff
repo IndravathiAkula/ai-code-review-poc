@@ -1,0 +1,19 @@
+diff --git a/app/pagination.py b/app/pagination.py
+index 1111111..2222222 100644
+--- a/app/pagination.py
++++ b/app/pagination.py
+@@ -1,8 +1,13 @@
+ def page(items: list, page_num: int, page_size: int) -> list:
++    # 1-indexed pages, inclusive end
+     start = (page_num - 1) * page_size
+-    end = start + page_size
++    end = start + page_size + 1
+     return items[start:end]
++
++
++def last_n(items: list, n: int) -> list:
++    return items[len(items) - n - 1:]
+ 
+ 
+ def chunk(items: list, size: int) -> list:
+     return [items[i:i + size] for i in range(0, len(items), size)]

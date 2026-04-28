@@ -1,0 +1,22 @@
+{
+  "description": "IDOR \u2014 any logged-in user can fetch any document by id. Missing ownership check (doc.owner_id == current_user.id).",
+  "expected": [
+    {
+      "path": "api/documents.py",
+      "line_range": [
+        9,
+        15
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "idor",
+        "authorization",
+        "ownership",
+        "current_user",
+        "access control",
+        "broken access"
+      ]
+    }
+  ]
+}

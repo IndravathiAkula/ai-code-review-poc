@@ -1,0 +1,4 @@
+{
+  "description": "Adds type annotations and docstrings. Behavior (including documented empty-input behavior of mean) is unchanged.",
+  "expected": []
+}

@@ -1,0 +1,39 @@
+{
+  "description": "XSS \u2014 |safe disables autoescape on user content. render_link builds HTML via f-string and wraps in Markup, bypassing escape for both url (javascript: scheme) and label.",
+  "expected": [
+    {
+      "path": "web/render.py",
+      "line_range": [
+        5,
+        6
+      ],
+      "category": "security",
+      "severity": "high",
+      "keywords": [
+        "xss",
+        "safe",
+        "autoescape",
+        "escape",
+        "untrusted",
+        "jinja"
+      ]
+    },
+    {
+      "path": "web/render.py",
+      "line_range": [
+        10,
+        12
+      ],
+      "category": "security",
+      "severity": "high",
+      "keywords": [
+        "xss",
+        "markup",
+        "escape",
+        "javascript:",
+        "href",
+        "injection"
+      ]
+    }
+  ]
+}

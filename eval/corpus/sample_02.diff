@@ -1,0 +1,29 @@
+diff --git a/api/orders.py b/api/orders.py
+index 1111111..2222222 100644
+--- a/api/orders.py
++++ b/api/orders.py
+@@ -1,11 +1,23 @@
+ from .models import Order, Customer
+ 
+ 
+ def total_revenue(customers):
+-    return sum(o.amount for c in customers for o in c.orders)
++    total = 0
++    for c in customers:
++        orders = Order.query.filter_by(customer_id=c.id).all()
++        for o in orders:
++            total += o.amount
++    return total
++
++
++def find_order(orders, target_id):
++    for i in range(len(orders)):
++        if orders[i].id == target_id:
++            return orders[i]
++    return None
+ 
+ 
+ def export_csv(path, customers):
+     with open(path, "w") as f:
+         for c in customers:
+             f.write(c.name + "\n")

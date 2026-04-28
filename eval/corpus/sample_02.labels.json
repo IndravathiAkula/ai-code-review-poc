@@ -1,0 +1,36 @@
+{
+  "description": "Classic N+1 query in total_revenue; find_order uses index-based iteration where next() or a dict lookup would be clearer.",
+  "expected": [
+    {
+      "path": "api/orders.py",
+      "line_range": [
+        5,
+        10
+      ],
+      "category": "performance",
+      "severity": "high",
+      "keywords": [
+        "n+1",
+        "query",
+        "loop",
+        "eager",
+        "join"
+      ]
+    },
+    {
+      "path": "api/orders.py",
+      "line_range": [
+        13,
+        17
+      ],
+      "category": "maintainability",
+      "severity": "low",
+      "keywords": [
+        "enumerate",
+        "pythonic",
+        "next",
+        "comprehension"
+      ]
+    }
+  ]
+}

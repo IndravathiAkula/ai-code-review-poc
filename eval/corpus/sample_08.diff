@@ -1,0 +1,28 @@
+diff --git a/api/documents.py b/api/documents.py
+index 1111111..2222222 100644
+--- a/api/documents.py
++++ b/api/documents.py
+@@ -1,13 +1,22 @@
+ from flask import Blueprint, jsonify, abort
+-from flask_login import login_required, current_user
++from flask_login import login_required
+ 
+ from .models import Document
+ 
+ bp = Blueprint("docs", __name__)
++
++
++@bp.get("/api/documents/<int:doc_id>")
++@login_required
++def get_document(doc_id: int):
++    doc = Document.query.get(doc_id)
++    if not doc:
++        abort(404)
++    return jsonify(doc.to_dict())
+ 
+ 
+ @bp.get("/api/documents")
+ @login_required
+ def list_documents():
+     docs = Document.query.filter_by(owner_id=current_user.id).all()
+     return jsonify([d.to_dict() for d in docs])

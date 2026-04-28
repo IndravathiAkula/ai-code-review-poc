@@ -1,0 +1,22 @@
+diff --git a/app/auth.py b/app/auth.py
+index 1111111..2222222 100644
+--- a/app/auth.py
++++ b/app/auth.py
+@@ -0,0 +1,17 @@
++import sqlite3
++
++DB_PATH = "users.db"
++ADMIN_TOKEN = "sk-live-9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c"
++
++
++def authenticate(username: str, password: str) -> bool:
++    conn = sqlite3.connect(DB_PATH)
++    cur = conn.cursor()
++    query = "SELECT id FROM users WHERE username='" + username + "' AND password='" + password + "'"
++    cur.execute(query)
++    row = cur.fetchone()
++    return row is not None
++
++
++def divide(a, b):
++    return a / b

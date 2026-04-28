@@ -1,0 +1,37 @@
+{
+  "description": "displayName lost its optional-chaining guards after profile became optional. greet silences the compiler with non-null assertions without fixing the hazard.",
+  "expected": [
+    {
+      "path": "web/user.ts",
+      "line_range": [
+        6,
+        8
+      ],
+      "category": "correctness",
+      "severity": "high",
+      "keywords": [
+        "undefined",
+        "null",
+        "optional",
+        "cannot read",
+        "nullable"
+      ]
+    },
+    {
+      "path": "web/user.ts",
+      "line_range": [
+        10,
+        13
+      ],
+      "category": "correctness",
+      "severity": "high",
+      "keywords": [
+        "non-null assertion",
+        "!.",
+        "undefined",
+        "null",
+        "runtime"
+      ]
+    }
+  ]
+}

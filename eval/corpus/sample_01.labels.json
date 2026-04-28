@@ -1,0 +1,49 @@
+{
+  "description": "Hardcoded secret + SQL injection + unchecked division by zero.",
+  "expected": [
+    {
+      "path": "app/auth.py",
+      "line_range": [
+        4,
+        4
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "secret",
+        "token",
+        "hardcoded",
+        "credential"
+      ]
+    },
+    {
+      "path": "app/auth.py",
+      "line_range": [
+        10,
+        10
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "sql injection",
+        "sqli",
+        "parameterized",
+        "string concatenation"
+      ]
+    },
+    {
+      "path": "app/auth.py",
+      "line_range": [
+        17,
+        17
+      ],
+      "category": "correctness",
+      "severity": "medium",
+      "keywords": [
+        "zero",
+        "zerodivisionerror",
+        "divide"
+      ]
+    }
+  ]
+}

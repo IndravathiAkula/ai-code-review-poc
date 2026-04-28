@@ -1,0 +1,29 @@
+diff --git a/app/retry.py b/app/retry.py
+index 1111111..2222222 100644
+--- a/app/retry.py
++++ b/app/retry.py
+@@ -1,12 +1,14 @@
+-import time
++def call_with_retry(fn, attempts: int = 3):
++    for _ in range(attempts):
++        try:
++            return fn()
++        except:
++            pass
++    return None
+ 
+ 
+-def call_with_retry(fn, attempts: int = 3):
+-    last_exc = None
+-    for i in range(attempts):
+-        try:
+-            return fn()
+-        except Exception as e:
+-            last_exc = e
+-            time.sleep(2 ** i)
+-    raise last_exc
++def fetch_or_default(fetch, default):
++    try:
++        return fetch()
++    except Exception:
++        return default

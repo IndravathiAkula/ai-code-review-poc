@@ -1,0 +1,21 @@
+diff --git a/app/greet.py b/app/greet.py
+index 1111111..2222222 100644
+--- a/app/greet.py
++++ b/app/greet.py
+@@ -1,10 +1,10 @@
+-def say_hi(person_name: str) -> str:
+-    return f"Hello, {person_name}!"
++def say_hi(name: str) -> str:
++    return f"Hello, {name}!"
+ 
+ 
+-def say_bye(person_name: str) -> str:
+-    return f"Bye, {person_name}!"
++def say_bye(name: str) -> str:
++    return f"Bye, {name}!"
+ 
+ 
+-def greet_all(people: list[str]) -> list[str]:
+-    return [say_hi(p) for p in people]
++def greet_all(names: list[str]) -> list[str]:
++    return [say_hi(n) for n in names]

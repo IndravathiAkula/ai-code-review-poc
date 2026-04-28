@@ -1,0 +1,17 @@
+diff --git a/app/config.py b/app/config.py
+index 1111111..2222222 100644
+--- a/app/config.py
++++ b/app/config.py
+@@ -1,5 +1,11 @@
+ import yaml
++import pickle
+ 
+ 
+ def load_config(text: str) -> dict:
+-    return yaml.safe_load(text)
++    return yaml.load(text)
++
++
++def load_cached(blob: bytes) -> dict:
++    # deserialize a cache entry produced by an earlier run
++    return pickle.loads(blob)

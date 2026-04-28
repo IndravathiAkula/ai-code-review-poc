@@ -1,0 +1,23 @@
+diff --git a/tests/test_pagination.py b/tests/test_pagination.py
+index 1111111..2222222 100644
+--- a/tests/test_pagination.py
++++ b/tests/test_pagination.py
+@@ -0,0 +1,18 @@
++import pytest
++
++from app.pagination import page
++
++
++@pytest.mark.parametrize("page_num,page_size,expected", [
++    (1, 2, [1, 2]),
++    (2, 2, [3, 4]),
++    (3, 2, [5]),
++])
++def test_page_returns_slice(page_num, page_size, expected):
++    items = [1, 2, 3, 4, 5]
++    assert page(items, page_num, page_size) == expected
++
++
++def test_page_beyond_end_returns_empty():
++    items = [1, 2, 3]
++    assert page(items, 5, 2) == []

@@ -1,0 +1,18 @@
+diff --git a/web/render.py b/web/render.py
+index 1111111..2222222 100644
+--- a/web/render.py
++++ b/web/render.py
+@@ -1,7 +1,12 @@
+ from jinja2 import Template
+ from markupsafe import Markup
+ 
+ 
+ def render_message(msg: str) -> str:
+-    template = Template("<div class=\"msg\">{{ content }}</div>")
++    template = Template("<div class=\"msg\">{{ content|safe }}</div>")
+     return template.render(content=msg)
++
++
++def render_link(url: str, label: str) -> str:
++    # users asked for raw HTML labels
++    return Markup(f'<a href="{url}">{label}</a>')

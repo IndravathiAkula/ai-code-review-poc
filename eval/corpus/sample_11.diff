@@ -1,0 +1,19 @@
+diff --git a/api/proxy.py b/api/proxy.py
+index 1111111..2222222 100644
+--- a/api/proxy.py
++++ b/api/proxy.py
+@@ -1,4 +1,14 @@
+ import requests
+ from flask import Blueprint, request, Response
+ 
+ bp = Blueprint("proxy", __name__)
++
++
++@bp.get("/api/fetch")
++def fetch():
++    url = request.args.get("url", "")
++    r = requests.get(url, timeout=5)
++    return Response(r.content, content_type=r.headers.get("Content-Type", "text/plain"))
++
++
++ALLOWED_HOSTS = ["api.example.com"]  # unused for now

@@ -1,0 +1,17 @@
+diff --git a/app/files.py b/app/files.py
+index 1111111..2222222 100644
+--- a/app/files.py
++++ b/app/files.py
+@@ -1,5 +1,12 @@
+ import os
+ from flask import Flask, send_file, request
+ 
+ app = Flask(__name__)
+ BASE = "/srv/files"
++
++
++@app.get("/download")
++def download():
++    name = request.args.get("name", "")
++    full = os.path.join(BASE, name)
++    return send_file(full)

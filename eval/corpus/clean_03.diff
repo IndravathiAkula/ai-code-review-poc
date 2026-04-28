@@ -1,0 +1,20 @@
+diff --git a/app/math_utils.py b/app/math_utils.py
+index 1111111..2222222 100644
+--- a/app/math_utils.py
++++ b/app/math_utils.py
+@@ -1,10 +1,13 @@
+-def clamp(x, lo, hi):
++def clamp(x: float, lo: float, hi: float) -> float:
++    """Return x bounded to the inclusive range [lo, hi]."""
+     if x < lo:
+         return lo
+     if x > hi:
+         return hi
+     return x
+ 
+ 
+-def mean(xs):
++def mean(xs: list[float]) -> float:
++    """Arithmetic mean. Raises ZeroDivisionError on empty input — callers
++    are expected to guard, same as statistics.mean."""
+     return sum(xs) / len(xs)

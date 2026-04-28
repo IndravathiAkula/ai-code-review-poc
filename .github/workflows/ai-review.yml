@@ -1,0 +1,58 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run AI review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          MODEL: openai/gpt-4o-mini
+          MIN_CONFIDENCE: "0.6"
+          MIN_SEVERITY: low
+          REVIEWER_CONCURRENCY: "4"
+          REVIEWER_MAX_DIFF_CHARS: "8000"
+          REVIEWER_MAX_RETRIES: "3"
+          REVIEWER_RETRY_BASE_SECONDS: "1.0"
+          REVIEWER_POST_SUMMARY: "true"
+          REVIEWER_ARTIFACT_PATH: ai-review-run.json
+          # Extra glob patterns to never send to the model (comma-separated).
+          # Built-in defaults already block .env, *.pem/*.key/id_rsa, and
+          # secrets/, credentials/, .ssh/ directories.
+          REVIEWER_BLOCK_PATTERNS: ""
+        run: python scripts/review_pr.py
+
+      - name: Upload run artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review-run-${{ github.event.pull_request.number }}
+          path: ai-review-run.json
+          if-no-files-found: ignore

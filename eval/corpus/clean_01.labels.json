@@ -1,0 +1,4 @@
+{
+  "description": "Pure parameter rename (person_name -> name). No behavior change, no hazards.",
+  "expected": []
+}
