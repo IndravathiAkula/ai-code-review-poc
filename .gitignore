@@ -10,4 +10,5 @@ build/
 *.egg-info/
 eval/out/
 ai-review-run.json
+dashboard.html
 .DS_Store

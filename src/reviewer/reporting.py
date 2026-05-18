@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -38,14 +39,26 @@ class RunSummary:
     total_tokens: int
     cost_usd: float | None
     wall_seconds: float
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    # Stamped at serialization time so the dashboard can plot time-series.
+    run_timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    # Surfaced so the dashboard can split cost/quality by provider.
+    provider: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
 
 
-def _aggregate_usage(usage_log: Iterable[dict]) -> tuple[int, int, int, int, float | None]:
+def _aggregate_usage(
+    usage_log: Iterable[dict],
+) -> tuple[int, int, int, int, float | None, int, int]:
+    """Return (calls, prompt_tokens, completion_tokens, total_tokens,
+    cost_usd, cache_read_tokens, cache_creation_tokens)."""
     calls = 0
     pt = ct = tt = 0
+    cache_read = cache_write = 0
     cost = 0.0
     cost_known = False
     for u in usage_log:
@@ -53,11 +66,15 @@ def _aggregate_usage(usage_log: Iterable[dict]) -> tuple[int, int, int, int, flo
         pt += int(u.get("prompt_tokens", 0) or 0)
         ct += int(u.get("completion_tokens", 0) or 0)
         tt += int(u.get("total_tokens", 0) or 0)
+        cache_read += int(u.get("cache_read_tokens", 0) or 0)
+        cache_write += int(u.get("cache_creation_tokens", 0) or 0)
         c = u.get("cost_usd")
         if c is not None:
             cost += float(c)
             cost_known = True
-    return calls, pt, ct, tt, (cost if cost_known else None)
+    return (calls, pt, ct, tt,
+            (cost if cost_known else None),
+            cache_read, cache_write)
 
 
 def summarize_run(
@@ -73,7 +90,15 @@ def summarize_run(
     """Roll up findings + post-report + usage_log into a single summary."""
     severity_counts: Counter = Counter(
         (f.get("severity", "low") or "low").lower() for f in findings)
-    calls, pt, ct, tt, cost = _aggregate_usage(usage_log)
+    calls, pt, ct, tt, cost, cache_read, cache_write = _aggregate_usage(usage_log)
+    # First entry's provider is representative — under the routes config
+    # all chunks of a single run go through the same provider unless the
+    # caller passes models_by_language with cross-provider routing.
+    provider = ""
+    for u in usage_log:
+        if u.get("provider"):
+            provider = u["provider"]
+            break
     return RunSummary(
         model=model,
         repo=repo,
@@ -89,6 +114,9 @@ def summarize_run(
         total_tokens=tt,
         cost_usd=cost,
         wall_seconds=wall_seconds,
+        cache_read_tokens=cache_read,
+        cache_creation_tokens=cache_write,
+        provider=provider,
     )
 
 
@@ -125,7 +153,7 @@ def render_markdown(summary: RunSummary) -> str:
         "",
         "## AI Review Summary",
         "",
-        f"`{summary.model}` reviewed {pr_label} in {summary.wall_seconds:.2f}s.",
+        f"Review of {pr_label} completed in {summary.wall_seconds:.2f}s.",
         "",
         "| Metric | Count |",
         "|---|---|",
@@ -138,8 +166,13 @@ def render_markdown(summary: RunSummary) -> str:
         f"**Tokens:** {summary.total_tokens:,} "
         f"({summary.prompt_tokens:,} prompt + {summary.completion_tokens:,} completion) "
         f"across {summary.total_calls} call(s)  ",
-        f"**Estimated cost:** {_fmt_cost(summary.cost_usd)}",
     ]
+    if summary.cache_read_tokens or summary.cache_creation_tokens:
+        lines.append(
+            f"**Cache:** {summary.cache_read_tokens:,} hits + "
+            f"{summary.cache_creation_tokens:,} writes  "
+        )
+    lines.append(f"**Estimated cost:** {_fmt_cost(summary.cost_usd)}")
     return "\n".join(lines)
 
 

@@ -81,7 +81,6 @@ def test_render_markdown_contains_tag_and_key_numbers():
     )
     md = render_markdown(s)
     assert SUMMARY_TAG in md
-    assert "openai/gpt-4o-mini" in md
     assert "PR #42" in md
     assert "5,432" in md  # total tokens with thousands separator
     assert "4,200" in md  # prompt
@@ -89,6 +88,22 @@ def test_render_markdown_contains_tag_and_key_numbers():
     assert "1 critical, 2 high" in md
     assert "$0.0009" in md
     assert "2.34s" in md
+
+
+def test_render_markdown_does_not_leak_model_name():
+    """The PR-level summary comment is user-facing; the model name stays
+    in the artifact JSON + CI log instead so the comment looks neutral."""
+    s = RunSummary(
+        model="anthropic/claude-sonnet-4-6", repo="o/r", pr_number=1,
+        posted=1, kept=0, skipped=0, removed_stale=0,
+        severity_counts={"high": 1}, total_calls=1,
+        prompt_tokens=10, completion_tokens=5, total_tokens=15,
+        cost_usd=0.0001, wall_seconds=1.0,
+    )
+    md = render_markdown(s)
+    assert "claude-sonnet" not in md
+    assert "anthropic" not in md
+    assert s.model not in md
 
 
 def test_render_markdown_unpriced_run_shows_dash():
@@ -143,6 +158,56 @@ def test_write_step_summary_appends_to_file(tmp_path):
     text = target.read_text(encoding="utf-8")
     assert "first run" in text
     assert "second run" in text
+
+
+def test_summarize_run_aggregates_cache_tokens():
+    """Cache hit/write tokens (from Anthropic) flow through to the summary."""
+    log = [
+        {"prompt_tokens": 200, "completion_tokens": 100,
+         "cache_read_tokens": 0, "cache_creation_tokens": 800,
+         "cost_usd": 0.001},  # chunk 1: writes cache
+        {"prompt_tokens": 200, "completion_tokens": 100,
+         "cache_read_tokens": 800, "cache_creation_tokens": 0,
+         "cost_usd": 0.0005},  # chunk 2+: reads cache
+        {"prompt_tokens": 200, "completion_tokens": 100,
+         "cache_read_tokens": 800, "cache_creation_tokens": 0,
+         "cost_usd": 0.0005},
+    ]
+    s = summarize_run(
+        model="claude-sonnet-4-6", repo="o/r", pr_number=1,
+        findings=[], post_report={},
+        usage_log=log, wall_seconds=2.0,
+    )
+    assert s.cache_creation_tokens == 800
+    assert s.cache_read_tokens == 1600
+    assert s.total_calls == 3
+
+
+def test_render_markdown_shows_cache_line_when_present():
+    s = RunSummary(
+        model="claude-sonnet-4-6", repo="o/r", pr_number=1,
+        posted=0, kept=0, skipped=0, removed_stale=0,
+        severity_counts={}, total_calls=3,
+        prompt_tokens=600, completion_tokens=300, total_tokens=2500,
+        cost_usd=0.002, wall_seconds=2.0,
+        cache_read_tokens=1600, cache_creation_tokens=800,
+    )
+    md = render_markdown(s)
+    assert "**Cache:**" in md
+    assert "1,600 hits" in md
+    assert "800 writes" in md
+
+
+def test_render_markdown_omits_cache_line_when_no_caching():
+    """Non-Anthropic runs shouldn't show a cache line at all."""
+    s = RunSummary(
+        model="openai/gpt-4o-mini", repo="o/r", pr_number=1,
+        posted=0, kept=0, skipped=0, removed_stale=0,
+        severity_counts={}, total_calls=1,
+        prompt_tokens=100, completion_tokens=50, total_tokens=150,
+        cost_usd=0.00005, wall_seconds=1.0,
+    )
+    assert "Cache:" not in render_markdown(s)
 
 
 def test_write_artifact_writes_summary_and_usage_log_as_json(tmp_path):

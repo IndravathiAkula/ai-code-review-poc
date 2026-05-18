@@ -15,6 +15,7 @@ from reviewer.config import effective_config, load_config
 from reviewer.github_poster import (
     fetch_pr_diff, post_findings, upsert_summary_comment,
 )
+from reviewer.providers import build_provider
 from reviewer.reporting import (
     render_markdown, summarize_run, write_artifact, write_step_summary,
 )
@@ -42,10 +43,12 @@ def main() -> int:
     workspace = Path(os.environ.get("GITHUB_WORKSPACE", "."))
     cfg = effective_config(config_file=load_config(workspace / ".ai-review.yml"))
 
-    print(f"[info] reviewing {repo_full} PR #{pr_number} with {cfg.model}")
+    print(f"[info] reviewing {repo_full} PR #{pr_number} via "
+          f"{cfg.provider}/{cfg.model}")
     print(f"[info] config: min_conf={cfg.min_confidence} "
           f"min_sev={cfg.min_severity} concurrency={cfg.concurrency} "
           f"block_patterns={list(cfg.block_patterns)}")
+    provider = build_provider(cfg.provider)
     diff, title, body = fetch_pr_diff(token, repo_full, pr_number)
     print(f"[info] diff size: {len(diff)} bytes")
 
@@ -64,6 +67,9 @@ def main() -> int:
         max_retries=cfg.max_retries,
         retry_base_seconds=cfg.retry_base_seconds,
         models_by_language=cfg.models_by_language or None,
+        max_files_per_pr=cfg.max_files_per_pr,
+        max_tokens_per_pr=cfg.max_tokens_per_pr,
+        provider=provider,
         usage_log=usage_log,
     )
     wall = time.perf_counter() - t0

@@ -43,6 +43,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          # Multi-provider support. Default is github-models; flip to
+          # groq / openrouter / nvidia / etc. by setting REVIEWER_PROVIDER
+          # and the matching *_API_KEY secret on this repo.
+          REVIEWER_PROVIDER: github-models
+          # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}  # Claude with prompt caching (~40% cheaper on multi-chunk PRs)
+          # GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           MODEL: openai/gpt-4o-mini
           MIN_CONFIDENCE: "0.6"
           MIN_SEVERITY: low
@@ -50,6 +57,10 @@ jobs:
           REVIEWER_MAX_DIFF_CHARS: "8000"
           REVIEWER_MAX_RETRIES: "3"
           REVIEWER_RETRY_BASE_SECONDS: "1.0"
+          # Cost caps (0 = unlimited). Set when reviewing untrusted PRs
+          # or to bound spend on monorepo-scale changes.
+          REVIEWER_MAX_FILES_PER_PR: "0"
+          REVIEWER_MAX_TOKENS_PER_PR: "0"
           REVIEWER_POST_SUMMARY: "true"
           REVIEWER_ARTIFACT_PATH: ai-review-run.json
           REVIEWER_BLOCK_PATTERNS: ""

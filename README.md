@@ -90,6 +90,137 @@ any finding on is counted as a false positive. Add cases by editing
 
 Override pricing at runtime via the `REVIEWER_PRICES` env var (JSON).
 
+## Trend dashboard
+
+Every CI run writes an artifact JSON (see Step 7 / `reporting.write_artifact`).
+Aggregate them across many PRs into a single self-contained HTML dashboard:
+
+```bash
+# Download artifacts from past CI runs into ./artifacts, then:
+python scripts/dashboard.py --inputs ./artifacts --out dashboard.html
+```
+
+You get:
+- **KPIs:** total runs, $ spent, findings posted/kept, cache hit rate, avg latency.
+- **Cost-per-run trend line** — spot regressions when a prompt change burns more tokens.
+- **Findings-per-run stacked bar** — fresh vs kept across re-runs (idempotency in action).
+- **Provider cost share pie** — see how much of your bill is `anthropic` vs `groq` vs free `github-models`.
+- **Severity histogram** — what classes of findings dominate.
+- **Per-run table** — sortable list of every run with PR number, model, tokens, cost, latency.
+
+Plotly is loaded via CDN at view time — the HTML opens in any browser, no Python on the consumer end. Generate it on a cron job and serve from S3 / GitHub Pages for a team-wide dashboard.
+
+## Local review in your IDE (MCP server)
+
+The same review pipeline that runs in CI is also exposed as an MCP
+(Model Context Protocol) server. Run it once in Claude Code, Cursor,
+or Continue and you get two tools:
+
+- `review_diff(diff_text, ...)` — review an arbitrary unified diff string.
+- `review_working_tree(repo_path=".", staged=False, ...)` — runs
+  `git diff` (or `git diff --cached`) under `repo_path` and reviews
+  the result.
+
+### Claude Code / Cursor / Continue config
+
+Add this to your client's MCP config (usually `~/.config/claude/mcp.json`
+for Claude Code, `~/.cursor/mcp.json` for Cursor):
+
+```json
+{
+  "mcpServers": {
+    "ai-review": {
+      "command": "python",
+      "args": ["-m", "reviewer.mcp_server"],
+      "cwd": "/absolute/path/to/ai-code-review-poc",
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_with_models_read",
+        "PYTHONPATH": "/absolute/path/to/ai-code-review-poc/src"
+      }
+    }
+  }
+}
+```
+
+Then in the chat: *"review my working tree"* — the assistant calls
+`review_working_tree()` and you get findings inline before you push.
+
+Provider selection works the same as in CI: set
+`ANTHROPIC_API_KEY` / `GROQ_API_KEY` / etc. in the `env` block and
+pass `provider="anthropic"` (or whichever) when invoking the tool.
+
+This is the single biggest reason to self-host instead of using a
+SaaS reviewer — preview your AI review while still in the editor,
+without it ever touching a PR.
+
+## Providers
+
+Out of the box the reviewer talks to **GitHub Models** (free within rate
+limits, no extra account). To swap providers, set `REVIEWER_PROVIDER`
+and the matching API key. The same `review_patch` code path runs against
+all of them — the abstraction lives in [src/reviewer/providers/](src/reviewer/providers/).
+
+| Provider | `REVIEWER_PROVIDER` | API key env | Notes |
+|---|---|---|---|
+| GitHub Models (default) | `github-models` | `GITHUB_TOKEN` | Free within rate limits |
+| Anthropic (Claude) | `anthropic` | `ANTHROPIC_API_KEY` | **Prompt caching enabled** — ~40% cheaper on multi-chunk PRs |
+| OpenAI direct | `openai` | `OPENAI_API_KEY` | |
+| Groq (fastest inference) | `groq` | `GROQ_API_KEY` | OSS models, sub-second |
+| OpenRouter (200+ models) | `openrouter` | `OPENROUTER_API_KEY` | One key, many models |
+| NVIDIA NIM | `nvidia` | `NVIDIA_API_KEY` | Free tier credits |
+| Together AI | `together` | `TOGETHER_API_KEY` | |
+| Anyscale | `anyscale` | `ANYSCALE_API_KEY` | |
+| Cerebras | `cerebras` | `CEREBRAS_API_KEY` | Even faster than Groq |
+| Ollama (local) | `ollama` | (none) | Self-hosted |
+| Custom OpenAI-compatible | `custom` | set `REVIEWER_BASE_URL` + `REVIEWER_API_KEY_ENV` | Any vLLM / LiteLLM gateway |
+
+Example — use Groq's `llama-3.3-70b-versatile` on TS/JS:
+
+```yaml
+# pulmo-FE/.ai-review.yml
+provider: groq
+model: llama-3.3-70b-versatile
+```
+
+```yaml
+# pulmo-FE/.github/workflows/ai-review.yml
+env:
+  REVIEWER_PROVIDER: groq
+  GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+```
+
+Example — use Claude with prompt caching for higher security recall at
+~$0.003/PR (caching brings the bulk of repeat-prompt cost down):
+
+```yaml
+# pulmo-FE/.ai-review.yml
+provider: anthropic
+model: claude-sonnet-4-6
+```
+
+```yaml
+# pulmo-FE/.github/workflows/ai-review.yml
+env:
+  REVIEWER_PROVIDER: anthropic
+  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+The Anthropic provider automatically marks the system prompt with
+`cache_control: ephemeral`, so the first chunk in a PR writes the cache
+and every subsequent chunk reads it for ~10% of the input price.
+
+Use the eval harness to compare providers head-to-head on the corpus:
+
+```bash
+python eval/harness.py \
+    --models openai/gpt-4o-mini llama-3.3-70b-versatile \
+    --min-confidence 0.0
+```
+
+(Provider per-model needs to be set via `REVIEWER_PROVIDER` env when
+running the harness — `models_by_language` is for the production
+reviewer.)
+
 ## Configuration
 
 Drop a `.ai-review.yml` at the repo root to override the workflow's
@@ -97,10 +228,13 @@ defaults without forking the workflow yaml. Every field is optional;
 unknown keys are warned and ignored.
 
 ```yaml
+provider: github-models      # github-models | openai | groq | openrouter | nvidia | ...
 model: openai/gpt-4o-mini
 min_confidence: 0.6
 min_severity: low            # low | medium | high | critical
 concurrency: 4
+max_files_per_pr: 0          # 0 = unlimited; pre-flight cap on chunks reviewed
+max_tokens_per_pr: 0         # 0 = unlimited; runtime cap on cumulative tokens
 max_diff_chars: 8000
 max_retries: 3
 retry_base_seconds: 1.0

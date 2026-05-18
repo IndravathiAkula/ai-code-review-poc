@@ -120,6 +120,22 @@ def test_effective_config_invalid_value_keeps_previous_value(capsys):
     assert "MIN_CONFIDENCE" in capsys.readouterr().err
 
 
+def test_effective_config_max_files_per_pr_from_yaml():
+    cfg = effective_config(config_file={"max_files_per_pr": 50})
+    assert cfg.max_files_per_pr == 50
+
+
+def test_effective_config_max_tokens_per_pr_from_env_string():
+    cfg = effective_config(env={"REVIEWER_MAX_TOKENS_PER_PR": "200000"})
+    assert cfg.max_tokens_per_pr == 200000
+
+
+def test_effective_config_caps_default_to_unlimited():
+    cfg = effective_config(env={})
+    assert cfg.max_files_per_pr == 0
+    assert cfg.max_tokens_per_pr == 0
+
+
 def test_effective_config_models_by_language_from_yaml():
     cfg = effective_config(config_file={
         "models_by_language": {"python": "openai/gpt-4o",

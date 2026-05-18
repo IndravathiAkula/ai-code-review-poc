@@ -26,6 +26,7 @@ class Price:
 
 
 PRICES: dict[str, Price] = {
+    # Treated as GitHub Models pricing when no provider is specified.
     "openai/gpt-4o-mini":             Price(0.15, 0.60),
     "openai/gpt-4o":                  Price(2.50, 10.00),
     "openai/o3-mini":                 Price(1.10, 4.40),
@@ -37,6 +38,51 @@ PRICES: dict[str, Price] = {
     "microsoft/phi-4":                Price(0.30, 0.50),
     "microsoft/phi-3.5-mini-instruct": Price(0.15, 0.30),
     "cohere/cohere-command-r-plus":   Price(2.50, 10.00),
+}
+
+
+# Per-provider pricing — wins when the caller passes ``provider=...`` to
+# ``cost_usd``. Same Price units (USD per 1M tokens, input / output).
+PROVIDER_PRICES: dict[str, dict[str, Price]] = {
+    "anthropic": {
+        # Cache write costs 1.25x input; cache read costs 0.10x input.
+        # Those multipliers are applied in cost_usd().
+        "claude-sonnet-4-5":            Price(3.00, 15.00),
+        "claude-sonnet-4-6":            Price(3.00, 15.00),
+        "claude-haiku-4-5":             Price(0.80, 4.00),
+        "claude-opus-4-7":              Price(15.00, 75.00),
+        "claude-3-5-sonnet-20241022":   Price(3.00, 15.00),
+        "claude-3-5-haiku-20241022":    Price(0.80, 4.00),
+    },
+    "groq": {
+        "llama-3.3-70b-versatile":      Price(0.59, 0.79),
+        "llama-3.1-8b-instant":         Price(0.05, 0.08),
+        "deepseek-r1-distill-llama-70b": Price(0.75, 0.99),
+        "mixtral-8x7b-32768":           Price(0.24, 0.24),
+    },
+    "openrouter": {
+        # Native list prices; OpenRouter adds a small markup at billing time.
+        "anthropic/claude-3.5-sonnet":  Price(3.00, 15.00),
+        "anthropic/claude-3.5-haiku":   Price(0.80, 4.00),
+        "google/gemini-2.5-flash":      Price(0.15, 0.60),
+        "meta-llama/llama-3.3-70b-instruct": Price(0.60, 0.80),
+    },
+    "openai": {
+        "gpt-4o":                       Price(2.50, 10.00),
+        "gpt-4o-mini":                  Price(0.15, 0.60),
+        "o3-mini":                      Price(1.10, 4.40),
+    },
+    "nvidia": {
+        # NIM has free credits; list prices shown for parity at scale.
+        "meta/llama-3.3-70b-instruct":  Price(0.60, 0.80),
+        "nvidia/llama-3.3-nemotron-super-49b-v1": Price(0.90, 1.20),
+    },
+    "cerebras": {
+        "llama3.3-70b":                 Price(0.85, 1.20),
+    },
+    "ollama": {
+        # Local inference — energy cost only.
+    },
 }
 
 
@@ -58,9 +104,46 @@ def _apply_overrides() -> None:
 _apply_overrides()
 
 
-def cost_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float | None:
-    p = PRICES.get(model) or PRICES.get(model.lower())
+# Cache pricing multipliers (relative to input_per_1m). Anthropic charges
+# 1.25x to write the cache and 0.10x to read from it.
+CACHE_WRITE_MULTIPLIER = 1.25
+CACHE_READ_MULTIPLIER = 0.10
+
+
+def cost_usd(
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    *,
+    provider: str | None = None,
+    cache_read_tokens: int = 0,
+    cache_creation_tokens: int = 0,
+) -> float | None:
+    """Estimated USD cost for a single call.
+
+    Resolution order for prices:
+      1. ``PROVIDER_PRICES[provider][model]`` (when provider is given)
+      2. ``PRICES[model]`` (case-sensitive)
+      3. ``PRICES[model.lower()]``
+      4. ``None`` (model not in any pricing table)
+
+    When ``cache_read_tokens`` or ``cache_creation_tokens`` are non-zero
+    (Anthropic prompt caching), they're billed at 0.10x and 1.25x of the
+    input rate respectively — significantly cheaper on repeat prompts.
+    """
+    p = None
+    if provider:
+        p = PROVIDER_PRICES.get(provider, {}).get(model)
+        if p is None:
+            p = PROVIDER_PRICES.get(provider, {}).get(model.lower())
+    if p is None:
+        p = PRICES.get(model) or PRICES.get(model.lower())
     if p is None:
         return None
-    return (prompt_tokens / 1_000_000) * p.input_per_1m + \
-           (completion_tokens / 1_000_000) * p.output_per_1m
+    cost = (
+        (prompt_tokens / 1_000_000) * p.input_per_1m
+        + (completion_tokens / 1_000_000) * p.output_per_1m
+        + (cache_creation_tokens / 1_000_000) * p.input_per_1m * CACHE_WRITE_MULTIPLIER
+        + (cache_read_tokens / 1_000_000) * p.input_per_1m * CACHE_READ_MULTIPLIER
+    )
+    return cost

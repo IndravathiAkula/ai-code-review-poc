@@ -33,6 +33,7 @@ class ReviewConfig:
     ``review_pr.py`` can fan one ``ReviewConfig`` out across the whole
     pipeline.
     """
+    provider: str = "github-models"
     model: str = "openai/gpt-4o-mini"
     min_confidence: float = 0.6
     min_severity: str = "low"
@@ -43,6 +44,12 @@ class ReviewConfig:
     block_patterns: tuple[str, ...] = ()
     post_summary: bool = True
     models_by_language: dict[str, str] = field(default_factory=dict)
+    # Cost caps — 0 means unlimited. ``max_files_per_pr`` is enforced
+    # pre-flight (excess chunks are skipped before any model call);
+    # ``max_tokens_per_pr`` is enforced at runtime against the running
+    # token total reported by completed chunks.
+    max_files_per_pr: int = 0
+    max_tokens_per_pr: int = 0
 
 
 _KNOWN_KEYS: set[str] = {f.name for f in fields(ReviewConfig)}
@@ -50,6 +57,7 @@ _KNOWN_KEYS: set[str] = {f.name for f in fields(ReviewConfig)}
 
 # Each known config field can also be set via an environment variable.
 _ENV_OVERRIDES: dict[str, str] = {
+    "provider": "REVIEWER_PROVIDER",
     "model": "MODEL",
     "min_confidence": "MIN_CONFIDENCE",
     "min_severity": "MIN_SEVERITY",
@@ -59,6 +67,8 @@ _ENV_OVERRIDES: dict[str, str] = {
     "retry_base_seconds": "REVIEWER_RETRY_BASE_SECONDS",
     "block_patterns": "REVIEWER_BLOCK_PATTERNS",
     "post_summary": "REVIEWER_POST_SUMMARY",
+    "max_files_per_pr": "REVIEWER_MAX_FILES_PER_PR",
+    "max_tokens_per_pr": "REVIEWER_MAX_TOKENS_PER_PR",
 }
 
 
@@ -67,7 +77,8 @@ def _coerce(name: str, value: Any) -> Any:
     conversion; YAML usually arrives already typed."""
     if name in {"min_confidence", "retry_base_seconds"}:
         return float(value)
-    if name in {"concurrency", "max_diff_chars", "max_retries"}:
+    if name in {"concurrency", "max_diff_chars", "max_retries",
+                "max_files_per_pr", "max_tokens_per_pr"}:
         return int(value)
     if name == "post_summary":
         if isinstance(value, bool):

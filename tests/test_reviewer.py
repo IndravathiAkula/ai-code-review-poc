@@ -541,6 +541,80 @@ def test_min_severity_default_keeps_everything():
     assert len(out) == 1
 
 
+THREE_FILE_DIFF = """diff --git a/a.py b/a.py
+index 1111111..2222222 100644
+--- a/a.py
++++ b/a.py
+@@ -0,0 +1,1 @@
++x = 1
+diff --git a/b.py b/b.py
+index 3333333..4444444 100644
+--- a/b.py
++++ b/b.py
+@@ -0,0 +1,1 @@
++y = 2
+diff --git a/c.py b/c.py
+index 5555555..6666666 100644
+--- a/c.py
++++ b/c.py
+@@ -0,0 +1,1 @@
++z = 3
+"""
+
+
+def test_max_files_per_pr_truncates_task_list_pre_flight():
+    """Excess files should be skipped before any model call —
+    expected behavior for a 200-file PR hitting a max_files_per_pr=20 cap."""
+    client = FakeClient(_payload([]))
+    review_patch(THREE_FILE_DIFF, model="x", client=client,
+                 max_files_per_pr=1, concurrency=1)
+    assert len(client.calls) == 1
+
+
+def test_max_files_per_pr_zero_means_unlimited():
+    client = FakeClient(_payload([]))
+    review_patch(THREE_FILE_DIFF, model="x", client=client,
+                 max_files_per_pr=0, concurrency=1)
+    assert len(client.calls) == 3
+
+
+def test_max_tokens_per_pr_stops_subsequent_chunks_after_cap_hit():
+    """First chunk reports 1000 tokens, blowing past the 500-token cap.
+    Remaining chunks must skip without spending."""
+    client = FakeClient(_payload([]), usage=FakeUsage(800, 200))
+    review_patch(THREE_FILE_DIFF, model="openai/gpt-4o-mini",
+                 client=client, max_tokens_per_pr=500, concurrency=1)
+    # Exactly one model call — the rest were skipped due to cap.
+    assert len(client.calls) == 1
+
+
+def test_max_tokens_per_pr_zero_means_unlimited():
+    client = FakeClient(_payload([]), usage=FakeUsage(800, 200))
+    review_patch(THREE_FILE_DIFF, model="openai/gpt-4o-mini",
+                 client=client, max_tokens_per_pr=0, concurrency=1)
+    assert len(client.calls) == 3
+
+
+def test_max_tokens_per_pr_allows_chunks_under_cap():
+    """If running total stays under the cap, all chunks proceed."""
+    client = FakeClient(_payload([]), usage=FakeUsage(50, 25))
+    review_patch(THREE_FILE_DIFF, model="openai/gpt-4o-mini",
+                 client=client, max_tokens_per_pr=10_000, concurrency=1)
+    assert len(client.calls) == 3
+
+
+def test_max_tokens_cap_with_concurrency_caps_at_least_some_chunks():
+    """Under concurrency, a few chunks may have already started when the
+    cap trips — but we should still skip at least some. Verifies the
+    event-flag plumbing works through the threadpool."""
+    client = FakeClient(_payload([]), usage=FakeUsage(800, 200))
+    # cap=100 → very tight, every chunk pushes past it.
+    review_patch(THREE_FILE_DIFF, model="openai/gpt-4o-mini",
+                 client=client, max_tokens_per_pr=100, concurrency=2)
+    # At least one of the three chunks should have skipped.
+    assert len(client.calls) < 3
+
+
 def test_findings_sorted_by_severity():
     client = FakeClient(_payload([
         {"line": 1, "severity": "low", "category": "maintainability",
