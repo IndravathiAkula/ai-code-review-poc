@@ -174,6 +174,24 @@ all of them — the abstraction lives in [src/reviewer/providers/](src/reviewer/
 | Ollama (local) | `ollama` | (none) | Self-hosted |
 | Custom OpenAI-compatible | `custom` | set `REVIEWER_BASE_URL` + `REVIEWER_API_KEY_ENV` | Any vLLM / LiteLLM gateway |
 
+### Using a GitHub App for the bot identity
+
+If you want PR comments posted under a custom bot name instead of
+`github-actions[bot]`, you can create a GitHub App and mint an
+installation token via `actions/create-github-app-token@v1`. The catch:
+GitHub Models doesn't accept App installation tokens for inference
+(only the workflow's auto-token or a personal PAT). The fix is to set
+**two tokens** — App for posting, workflow token for inference:
+
+```yaml
+env:
+  GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}    # App: posts as your custom bot
+  MODEL_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}          # workflow: has models:read
+```
+
+`MODEL_API_TOKEN` is checked first by `GitHubModelsProvider`; when
+unset, `GITHUB_TOKEN` is used for everything (existing behavior).
+
 Example — use Groq's `llama-3.3-70b-versatile` on TS/JS:
 
 ```yaml

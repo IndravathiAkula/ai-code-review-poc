@@ -32,10 +32,17 @@ def build_client(endpoint: str | None = None, token: str | None = None) -> ChatC
     """
     endpoint = endpoint or os.environ.get(
         "MODEL_ENDPOINT", "https://models.github.ai/inference")
-    token = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    # Same lookup order as GitHubModelsProvider — MODEL_API_TOKEN wins so
+    # consumers can split the model-call token from the posting token.
+    token = (
+        token
+        or os.environ.get("MODEL_API_TOKEN")
+        or os.environ.get("GITHUB_TOKEN")
+        or os.environ.get("GH_TOKEN")
+    )
     if not token:
         raise RuntimeError(
-            "GITHUB_TOKEN (or GH_TOKEN) not set — cannot call GitHub Models.")
+            "No token found — set MODEL_API_TOKEN, GITHUB_TOKEN, or GH_TOKEN.")
     if not _looks_like_github_token(token):
         print(
             "[warn] GITHUB_TOKEN does not have a recognised GitHub prefix "

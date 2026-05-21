@@ -134,9 +134,18 @@ def build_provider(
             f"new OpenAI-compatible endpoint).")
 
     if spec.kind == "github-models":
+        # MODEL_API_TOKEN beats GITHUB_TOKEN so consumers can use the
+        # workflow's auto-token (which has models:read via the yaml's
+        # ``permissions:`` block) for inference while a GitHub App
+        # installation token handles posting. Both still work as a
+        # single combined token when MODEL_API_TOKEN is unset.
+        token = (
+            env.get("MODEL_API_TOKEN")
+            or (env.get(spec.auth_env) if spec.auth_env else None)
+        )
         return GitHubModelsProvider(
             endpoint=spec.base_url,
-            token=env.get(spec.auth_env) if spec.auth_env else None,
+            token=token,
         )
     if spec.kind == "openai-compat":
         api_key = env.get(spec.auth_env) if spec.auth_env else None

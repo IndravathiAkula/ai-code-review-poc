@@ -41,6 +41,11 @@ jobs:
       - name: Run AI review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # If GITHUB_TOKEN above is a GitHub App installation token (for
+          # a custom bot identity on comments), uncomment MODEL_API_TOKEN
+          # below so the inference call uses the workflow's auto-token
+          # (which carries models:read via the permissions block above).
+          # MODEL_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           # Multi-provider support. Default is github-models; flip to

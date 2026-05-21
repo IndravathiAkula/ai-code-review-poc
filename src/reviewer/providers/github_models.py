@@ -61,10 +61,25 @@ class GitHubModelsProvider:
             return
         endpoint = endpoint or os.environ.get(
             "MODEL_ENDPOINT", "https://models.github.ai/inference")
-        token = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+        # Look up tokens in priority order:
+        #   1. ``token`` arg (explicit caller override)
+        #   2. ``MODEL_API_TOKEN`` env (workflow-scoped, has models:read)
+        #   3. ``GITHUB_TOKEN`` env (app token or whatever the runtime sets)
+        #   4. ``GH_TOKEN`` env (rarely used)
+        # The split between MODEL_API_TOKEN and GITHUB_TOKEN lets consumers
+        # use a GitHub App installation token for posting comments while
+        # keeping the workflow's GITHUB_TOKEN (with models:read via
+        # ``permissions:`` in the yaml) for the inference call.
+        token = (
+            token
+            or os.environ.get("MODEL_API_TOKEN")
+            or os.environ.get("GITHUB_TOKEN")
+            or os.environ.get("GH_TOKEN")
+        )
         if not token:
             raise RuntimeError(
-                "GITHUB_TOKEN (or GH_TOKEN) not set — cannot call GitHub Models.")
+                "No token found for GitHub Models — set MODEL_API_TOKEN, "
+                "GITHUB_TOKEN, or GH_TOKEN.")
         if not _looks_like_github_token(token):
             print(
                 "[warn] GITHUB_TOKEN does not have a recognised GitHub prefix "

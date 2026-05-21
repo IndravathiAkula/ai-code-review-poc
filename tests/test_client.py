@@ -43,3 +43,32 @@ def test_build_client_does_not_warn_on_valid_token(monkeypatch, capsys):
     build_client()
     err = capsys.readouterr().err
     assert "does not have a recognised GitHub prefix" not in err
+
+
+def test_build_client_prefers_model_api_token_over_github_token(monkeypatch):
+    """When both are set, MODEL_API_TOKEN wins so the GitHub App
+    installation token (which may lack models:read) is not used for
+    inference."""
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_app_token_for_posting")
+    monkeypatch.setenv("MODEL_API_TOKEN", "ghp_" + "x" * 36)
+    client = build_client()
+    # The Azure SDK's credential holds the actual token in its `key` attr.
+    cred = client._config.credential
+    assert cred.key == "ghp_" + "x" * 36
+
+
+def test_build_client_falls_back_to_github_token_when_model_api_token_missing(monkeypatch):
+    monkeypatch.delenv("MODEL_API_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_" + "y" * 36)
+    client = build_client()
+    cred = client._config.credential
+    assert cred.key == "ghp_" + "y" * 36
+
+
+def test_build_client_explicit_token_arg_beats_env_vars(monkeypatch):
+    """A caller passing token= explicitly should override any env state."""
+    monkeypatch.setenv("MODEL_API_TOKEN", "from-env")
+    monkeypatch.setenv("GITHUB_TOKEN", "also-from-env")
+    client = build_client(token="explicit_caller_token")
+    cred = client._config.credential
+    assert cred.key == "explicit_caller_token"

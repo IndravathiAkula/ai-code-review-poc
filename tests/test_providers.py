@@ -66,6 +66,26 @@ def test_build_provider_default_is_github_models(monkeypatch):
     assert isinstance(p, GitHubModelsProvider)
 
 
+def test_build_provider_github_models_prefers_model_api_token():
+    """When MODEL_API_TOKEN is set, the factory hands that token to the
+    GitHubModelsProvider instead of GITHUB_TOKEN. Real-world: GitHub App
+    installation tokens (in GITHUB_TOKEN) don't carry models:read but the
+    workflow's auto-token (in MODEL_API_TOKEN) does."""
+    p = build_provider("github-models", env={
+        "GITHUB_TOKEN": "ghs_app_token",
+        "MODEL_API_TOKEN": "ghp_" + "w" * 36,
+    })
+    assert p._client._config.credential.key == "ghp_" + "w" * 36
+
+
+def test_build_provider_github_models_falls_back_to_github_token():
+    """Without MODEL_API_TOKEN, GITHUB_TOKEN is still used (backward compat)."""
+    p = build_provider("github-models", env={
+        "GITHUB_TOKEN": "ghp_" + "z" * 36,
+    })
+    assert p._client._config.credential.key == "ghp_" + "z" * 36
+
+
 def test_build_provider_from_env_variable():
     p = build_provider(env={
         "REVIEWER_PROVIDER": "groq",
