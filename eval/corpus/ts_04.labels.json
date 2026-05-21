@@ -1,0 +1,21 @@
+{
+  "description": "Command injection via unsanitized child_process.exec call.",
+  "expected": [
+    {
+      "path": "src/export/pdf.ts",
+      "line_range": [
+        4,
+        4
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "command injection",
+        "shell",
+        "exec",
+        "untrusted",
+        "execfile"
+      ]
+    }
+  ]
+}

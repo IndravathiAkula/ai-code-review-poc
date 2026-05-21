@@ -1,0 +1,10 @@
+diff --git a/src/docs/loader.ts b/src/docs/loader.ts
+index 1111111..2222222 100644
+--- a/src/docs/loader.ts
++++ b/src/docs/loader.ts
+@@ -0,0 +1,5 @@
++import { readFile } from "fs/promises";
++
++export async function loadDoc(name: string) {
++  return readFile(`./docs/${name}`, "utf-8");
++}

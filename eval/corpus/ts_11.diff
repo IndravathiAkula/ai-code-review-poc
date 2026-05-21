@@ -1,0 +1,8 @@
+diff --git a/src/ui/welcome.ts b/src/ui/welcome.ts
+index 1111111..2222222 100644
+--- a/src/ui/welcome.ts
++++ b/src/ui/welcome.ts
+@@ -0,0 +1,3 @@
++export function showWelcome(name: string) {
++  document.write(`<h1>Welcome ${name}</h1>`);
++}

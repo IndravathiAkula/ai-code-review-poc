@@ -1,0 +1,21 @@
+{
+  "description": "XSS via document.write with untrusted name input.",
+  "expected": [
+    {
+      "path": "src/ui/welcome.ts",
+      "line_range": [
+        2,
+        2
+      ],
+      "category": "security",
+      "severity": "high",
+      "keywords": [
+        "xss",
+        "document.write",
+        "cross-site",
+        "sanitize",
+        "untrusted"
+      ]
+    }
+  ]
+}

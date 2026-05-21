@@ -1,0 +1,11 @@
+diff --git a/src/api/users.ts b/src/api/users.ts
+index 1111111..2222222 100644
+--- a/src/api/users.ts
++++ b/src/api/users.ts
+@@ -0,0 +1,6 @@
++declare function saveToDb(u: unknown): Promise<void>;
++
++export async function saveUser(user: { id: string }) {
++  saveToDb(user);
++  return { success: true };
++}

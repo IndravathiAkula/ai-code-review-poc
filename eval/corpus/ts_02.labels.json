@@ -1,0 +1,21 @@
+{
+  "description": "XSS via innerHTML with untrusted user input.",
+  "expected": [
+    {
+      "path": "src/ui/comments.ts",
+      "line_range": [
+        3,
+        3
+      ],
+      "category": "security",
+      "severity": "high",
+      "keywords": [
+        "xss",
+        "innerhtml",
+        "cross-site",
+        "sanitize",
+        "untrusted"
+      ]
+    }
+  ]
+}

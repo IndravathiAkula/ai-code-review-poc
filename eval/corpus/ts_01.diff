@@ -1,0 +1,17 @@
+diff --git a/src/payments.ts b/src/payments.ts
+index 1111111..2222222 100644
+--- a/src/payments.ts
++++ b/src/payments.ts
+@@ -0,0 +1,12 @@
++import axios from "axios";
++
++// eval-corpus: intentional planted bug, key below is fake.
++const STRIPE_KEY = "sk-live-NOT-REAL-EVAL-CORPUS-FAKE-KEY";
++
++export async function charge(amount: number) {
++  return axios.post(
++    "https://api.stripe.com/v1/charges",
++    { amount },
++    { headers: { Authorization: `Bearer ${STRIPE_KEY}` } },
++  );
++}

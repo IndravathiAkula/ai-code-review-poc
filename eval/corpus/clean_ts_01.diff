@@ -1,0 +1,10 @@
+diff --git a/src/db/users.ts b/src/db/users.ts
+index 1111111..2222222 100644
+--- a/src/db/users.ts
++++ b/src/db/users.ts
+@@ -0,0 +1,5 @@
++declare const db: { raw: (q: string, params: unknown[]) => Promise<unknown> };
++
++export async function findUser(email: string) {
++  return db.raw("SELECT * FROM users WHERE email = ?", [email]);
++}

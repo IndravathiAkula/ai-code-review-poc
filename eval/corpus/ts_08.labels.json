@@ -1,0 +1,35 @@
+{
+  "description": "Hardcoded JWT secret AND ignoreExpiration accepting expired tokens.",
+  "expected": [
+    {
+      "path": "src/auth/jwt.ts",
+      "line_range": [
+        3,
+        3
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "secret",
+        "hardcoded",
+        "jwt",
+        "credential"
+      ]
+    },
+    {
+      "path": "src/auth/jwt.ts",
+      "line_range": [
+        6,
+        6
+      ],
+      "category": "security",
+      "severity": "high",
+      "keywords": [
+        "ignoreexpiration",
+        "expired",
+        "jwt",
+        "expir"
+      ]
+    }
+  ]
+}

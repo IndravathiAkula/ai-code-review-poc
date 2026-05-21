@@ -1,0 +1,22 @@
+{
+  "description": "Hardcoded Stripe-style API key in TS source.",
+  "expected": [
+    {
+      "path": "src/payments.ts",
+      "line_range": [
+        4,
+        4
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "secret",
+        "token",
+        "hardcoded",
+        "api key",
+        "stripe",
+        "credential"
+      ]
+    }
+  ]
+}

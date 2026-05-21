@@ -1,0 +1,10 @@
+diff --git a/src/export/pdf.ts b/src/export/pdf.ts
+index 1111111..2222222 100644
+--- a/src/export/pdf.ts
++++ b/src/export/pdf.ts
+@@ -0,0 +1,5 @@
++import { exec } from "child_process";
++
++export function exportPdf(filename: string) {
++  exec(`pdftk ${filename} output ./out.pdf`);
++}

@@ -1,0 +1,21 @@
+{
+  "description": "Missing await on async side-effect; success returned before write completes.",
+  "expected": [
+    {
+      "path": "src/api/users.ts",
+      "line_range": [
+        4,
+        4
+      ],
+      "category": "correctness",
+      "severity": "high",
+      "keywords": [
+        "await",
+        "async",
+        "missing",
+        "promise",
+        "unhandled"
+      ]
+    }
+  ]
+}

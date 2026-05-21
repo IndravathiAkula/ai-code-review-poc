@@ -1,0 +1,8 @@
+diff --git a/src/auth/tokens.ts b/src/auth/tokens.ts
+index 1111111..2222222 100644
+--- a/src/auth/tokens.ts
++++ b/src/auth/tokens.ts
+@@ -0,0 +1,3 @@
++export function generateResetToken(): string {
++  return Math.random().toString(36).slice(2);
++}

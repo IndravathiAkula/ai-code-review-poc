@@ -1,0 +1,21 @@
+{
+  "description": "Prototype pollution via dynamic property assignment without key filtering.",
+  "expected": [
+    {
+      "path": "src/utils/merge.ts",
+      "line_range": [
+        3,
+        3
+      ],
+      "category": "security",
+      "severity": "high",
+      "keywords": [
+        "prototype",
+        "pollution",
+        "__proto__",
+        "assign",
+        "key"
+      ]
+    }
+  ]
+}

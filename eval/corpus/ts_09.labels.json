@@ -1,0 +1,21 @@
+{
+  "description": "React useEffect with empty dependency array but uses userId.",
+  "expected": [
+    {
+      "path": "src/hooks/useUserData.ts",
+      "line_range": [
+        7,
+        7
+      ],
+      "category": "correctness",
+      "severity": "high",
+      "keywords": [
+        "dependency",
+        "useeffect",
+        "deps",
+        "userId",
+        "missing"
+      ]
+    }
+  ]
+}

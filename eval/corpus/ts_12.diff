@@ -1,0 +1,11 @@
+diff --git a/src/utils/merge.ts b/src/utils/merge.ts
+index 1111111..2222222 100644
+--- a/src/utils/merge.ts
++++ b/src/utils/merge.ts
+@@ -0,0 +1,6 @@
++export function merge(target: any, source: any) {
++  for (const key in source) {
++    target[key] = source[key];
++  }
++  return target;
++}

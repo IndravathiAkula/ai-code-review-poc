@@ -1,0 +1,21 @@
+{
+  "description": "SQL injection via template literal interpolation.",
+  "expected": [
+    {
+      "path": "src/db/users.ts",
+      "line_range": [
+        4,
+        4
+      ],
+      "category": "security",
+      "severity": "critical",
+      "keywords": [
+        "sql injection",
+        "sqli",
+        "parameterized",
+        "template literal",
+        "string interpolation"
+      ]
+    }
+  ]
+}

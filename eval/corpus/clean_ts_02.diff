@@ -1,0 +1,14 @@
+diff --git a/src/hooks/useUserData.ts b/src/hooks/useUserData.ts
+index 1111111..2222222 100644
+--- a/src/hooks/useUserData.ts
++++ b/src/hooks/useUserData.ts
+@@ -0,0 +1,9 @@
++import { useEffect, useState } from "react";
++
++export function useUserData(userId: string) {
++  const [data, setData] = useState(null);
++  useEffect(() => {
++    fetch(`/api/users/${userId}`).then(r => r.json()).then(setData);
++  }, [userId]);
++  return data;
++}

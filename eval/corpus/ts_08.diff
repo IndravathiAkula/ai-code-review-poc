@@ -1,0 +1,12 @@
+diff --git a/src/auth/jwt.ts b/src/auth/jwt.ts
+index 1111111..2222222 100644
+--- a/src/auth/jwt.ts
++++ b/src/auth/jwt.ts
+@@ -0,0 +1,7 @@
++import jwt from "jsonwebtoken";
++
++const JWT_SECRET = "my-jwt-secret-key-12345";
++
++export function verifyToken(token: string) {
++  return jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
++}

@@ -608,6 +608,257 @@ CASES: list[dict] = [
         "description": "Routine minor/patch version bumps in requirements.txt. No code change.",
         "expected": [],
     },
+
+    # ── TypeScript/JavaScript bug cases ──────────────────────────────────
+    {
+        "id": "ts_01",
+        "path": "src/payments.ts",
+        "before": "",
+        "after": dedent('''\
+            import axios from "axios";
+
+            // eval-corpus: intentional planted bug, key below is fake.
+            const STRIPE_KEY = "sk-live-NOT-REAL-EVAL-CORPUS-FAKE-KEY";
+
+            export async function charge(amount: number) {
+              return axios.post(
+                "https://api.stripe.com/v1/charges",
+                { amount },
+                { headers: { Authorization: `Bearer ${STRIPE_KEY}` } },
+              );
+            }
+            '''),
+        "description": "Hardcoded Stripe-style API key in TS source.",
+        "expected": [
+            {"path": "src/payments.ts", "line_range": [4, 4], "category": "security", "severity": "critical",
+             "keywords": ["secret", "token", "hardcoded", "api key", "stripe", "credential"]},
+        ],
+    },
+    {
+        "id": "ts_02",
+        "path": "src/ui/comments.ts",
+        "before": "",
+        "after": dedent('''\
+            export function renderComment(comment: string) {
+              const el = document.getElementById("comments")!;
+              el.innerHTML = comment;
+            }
+            '''),
+        "description": "XSS via innerHTML with untrusted user input.",
+        "expected": [
+            {"path": "src/ui/comments.ts", "line_range": [3, 3], "category": "security", "severity": "high",
+             "keywords": ["xss", "innerhtml", "cross-site", "sanitize", "untrusted"]},
+        ],
+    },
+    {
+        "id": "ts_03",
+        "path": "src/db/users.ts",
+        "before": "",
+        "after": dedent('''\
+            declare const db: { raw: (q: string, params?: unknown[]) => Promise<unknown> };
+
+            export async function findUser(email: string) {
+              const sql = `SELECT * FROM users WHERE email = '${email}'`;
+              return db.raw(sql);
+            }
+            '''),
+        "description": "SQL injection via template literal interpolation.",
+        "expected": [
+            {"path": "src/db/users.ts", "line_range": [4, 4], "category": "security", "severity": "critical",
+             "keywords": ["sql injection", "sqli", "parameterized", "template literal", "string interpolation"]},
+        ],
+    },
+    {
+        "id": "ts_04",
+        "path": "src/export/pdf.ts",
+        "before": "",
+        "after": dedent('''\
+            import { exec } from "child_process";
+
+            export function exportPdf(filename: string) {
+              exec(`pdftk ${filename} output ./out.pdf`);
+            }
+            '''),
+        "description": "Command injection via unsanitized child_process.exec call.",
+        "expected": [
+            {"path": "src/export/pdf.ts", "line_range": [4, 4], "category": "security", "severity": "critical",
+             "keywords": ["command injection", "shell", "exec", "untrusted", "execfile"]},
+        ],
+    },
+    {
+        "id": "ts_05",
+        "path": "src/auth/callback.ts",
+        "before": "",
+        "after": dedent('''\
+            export function loginCallback(next: string) {
+              window.location.href = next;
+            }
+            '''),
+        "description": "Open redirect via unvalidated next URL.",
+        "expected": [
+            {"path": "src/auth/callback.ts", "line_range": [2, 2], "category": "security", "severity": "high",
+             "keywords": ["open redirect", "redirect", "validate", "whitelist", "untrusted"]},
+        ],
+    },
+    {
+        "id": "ts_06",
+        "path": "src/docs/loader.ts",
+        "before": "",
+        "after": dedent('''\
+            import { readFile } from "fs/promises";
+
+            export async function loadDoc(name: string) {
+              return readFile(`./docs/${name}`, "utf-8");
+            }
+            '''),
+        "description": "Path traversal via unsanitized filename interpolation.",
+        "expected": [
+            {"path": "src/docs/loader.ts", "line_range": [4, 4], "category": "security", "severity": "high",
+             "keywords": ["path traversal", "directory traversal", "..", "sanitize", "untrusted"]},
+        ],
+    },
+    {
+        "id": "ts_07",
+        "path": "src/auth/tokens.ts",
+        "before": "",
+        "after": dedent('''\
+            export function generateResetToken(): string {
+              return Math.random().toString(36).slice(2);
+            }
+            '''),
+        "description": "Insecure randomness for security-sensitive token generation.",
+        "expected": [
+            {"path": "src/auth/tokens.ts", "line_range": [2, 2], "category": "security", "severity": "high",
+             "keywords": ["math.random", "insecure", "randomness", "crypto", "csprng"]},
+        ],
+    },
+    {
+        "id": "ts_08",
+        "path": "src/auth/jwt.ts",
+        "before": "",
+        "after": dedent('''\
+            import jwt from "jsonwebtoken";
+
+            const JWT_SECRET = "my-jwt-secret-key-12345";
+
+            export function verifyToken(token: string) {
+              return jwt.verify(token, JWT_SECRET, { ignoreExpiration: true });
+            }
+            '''),
+        "description": "Hardcoded JWT secret AND ignoreExpiration accepting expired tokens.",
+        "expected": [
+            {"path": "src/auth/jwt.ts", "line_range": [3, 3], "category": "security", "severity": "critical",
+             "keywords": ["secret", "hardcoded", "jwt", "credential"]},
+            {"path": "src/auth/jwt.ts", "line_range": [6, 6], "category": "security", "severity": "high",
+             "keywords": ["ignoreexpiration", "expired", "jwt", "expir"]},
+        ],
+    },
+    {
+        "id": "ts_09",
+        "path": "src/hooks/useUserData.ts",
+        "before": "",
+        "after": dedent('''\
+            import { useEffect, useState } from "react";
+
+            export function useUserData(userId: string) {
+              const [data, setData] = useState(null);
+              useEffect(() => {
+                fetch(`/api/users/${userId}`).then(r => r.json()).then(setData);
+              }, []);
+              return data;
+            }
+            '''),
+        "description": "React useEffect with empty dependency array but uses userId.",
+        "expected": [
+            {"path": "src/hooks/useUserData.ts", "line_range": [7, 7], "category": "correctness", "severity": "high",
+             "keywords": ["dependency", "useeffect", "deps", "userId", "missing"]},
+        ],
+    },
+    {
+        "id": "ts_10",
+        "path": "src/api/users.ts",
+        "before": "",
+        "after": dedent('''\
+            declare function saveToDb(u: unknown): Promise<void>;
+
+            export async function saveUser(user: { id: string }) {
+              saveToDb(user);
+              return { success: true };
+            }
+            '''),
+        "description": "Missing await on async side-effect; success returned before write completes.",
+        "expected": [
+            {"path": "src/api/users.ts", "line_range": [4, 4], "category": "correctness", "severity": "high",
+             "keywords": ["await", "async", "missing", "promise", "unhandled"]},
+        ],
+    },
+    {
+        "id": "ts_11",
+        "path": "src/ui/welcome.ts",
+        "before": "",
+        "after": dedent('''\
+            export function showWelcome(name: string) {
+              document.write(`<h1>Welcome ${name}</h1>`);
+            }
+            '''),
+        "description": "XSS via document.write with untrusted name input.",
+        "expected": [
+            {"path": "src/ui/welcome.ts", "line_range": [2, 2], "category": "security", "severity": "high",
+             "keywords": ["xss", "document.write", "cross-site", "sanitize", "untrusted"]},
+        ],
+    },
+    {
+        "id": "ts_12",
+        "path": "src/utils/merge.ts",
+        "before": "",
+        "after": dedent('''\
+            export function merge(target: any, source: any) {
+              for (const key in source) {
+                target[key] = source[key];
+              }
+              return target;
+            }
+            '''),
+        "description": "Prototype pollution via dynamic property assignment without key filtering.",
+        "expected": [
+            {"path": "src/utils/merge.ts", "line_range": [3, 3], "category": "security", "severity": "high",
+             "keywords": ["prototype", "pollution", "__proto__", "assign", "key"]},
+        ],
+    },
+
+    # ── TypeScript clean cases (no findings expected) ────────────────────
+    {
+        "id": "clean_ts_01",
+        "path": "src/db/users.ts",
+        "before": "",
+        "after": dedent('''\
+            declare const db: { raw: (q: string, params: unknown[]) => Promise<unknown> };
+
+            export async function findUser(email: string) {
+              return db.raw("SELECT * FROM users WHERE email = ?", [email]);
+            }
+            '''),
+        "description": "Safe parameterized query — no SQL injection risk.",
+        "expected": [],
+    },
+    {
+        "id": "clean_ts_02",
+        "path": "src/hooks/useUserData.ts",
+        "before": "",
+        "after": dedent('''\
+            import { useEffect, useState } from "react";
+
+            export function useUserData(userId: string) {
+              const [data, setData] = useState(null);
+              useEffect(() => {
+                fetch(`/api/users/${userId}`).then(r => r.json()).then(setData);
+              }, [userId]);
+              return data;
+            }
+            '''),
+        "description": "React hook with correct dependency array — no bug.",
+        "expected": [],
+    },
 ]
 
 

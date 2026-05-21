@@ -1,0 +1,21 @@
+{
+  "description": "Path traversal via unsanitized filename interpolation.",
+  "expected": [
+    {
+      "path": "src/docs/loader.ts",
+      "line_range": [
+        4,
+        4
+      ],
+      "category": "security",
+      "severity": "high",
+      "keywords": [
+        "path traversal",
+        "directory traversal",
+        "..",
+        "sanitize",
+        "untrusted"
+      ]
+    }
+  ]
+}

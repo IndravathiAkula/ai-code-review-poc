@@ -1,0 +1,9 @@
+diff --git a/src/ui/comments.ts b/src/ui/comments.ts
+index 1111111..2222222 100644
+--- a/src/ui/comments.ts
++++ b/src/ui/comments.ts
+@@ -0,0 +1,4 @@
++export function renderComment(comment: string) {
++  const el = document.getElementById("comments")!;
++  el.innerHTML = comment;
++}
