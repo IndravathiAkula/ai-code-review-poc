@@ -110,6 +110,30 @@ You get:
 
 Plotly is loaded via CDN at view time — the HTML opens in any browser, no Python on the consumer end. Generate it on a cron job and serve from S3 / GitHub Pages for a team-wide dashboard.
 
+## Streaming progress (CLI)
+
+Pass `--stream` to `scripts/review_local.py` to see the model output as
+it arrives on stderr — useful as an "is it working?" indicator on slow
+providers:
+
+```bash
+python scripts/review_local.py --diff some.diff --stream --model openai/gpt-4o
+```
+
+Provider support:
+- **OpenAI / Groq / OpenRouter / NVIDIA / Together / Cerebras / OpenAI-compatible**: native token-level streaming.
+- **Anthropic**: native streaming via `messages.stream()`; cache hits don't surface in stream mode.
+- **GitHub Models**: fallback — the full response is delivered in one chunk (SDK doesn't expose a stable streaming surface).
+
+The final findings list is identical whether streaming is on or off
+(JSON is parsed at end-of-stream). Token / cost accounting is skipped
+for streamed chunks because most provider SDKs don't surface usage on
+streaming responses.
+
+Programmatic: pass `stream_callback=callable(path, delta)` to
+`review_patch()`. Useful for MCP servers or webhooks that want to
+relay progress to a client.
+
 ## Local review in your IDE (MCP server)
 
 The same review pipeline that runs in CI is also exposed as an MCP

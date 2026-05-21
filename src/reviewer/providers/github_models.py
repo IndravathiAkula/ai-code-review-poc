@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Any
+from typing import Any, Iterator
 
 from azure.ai.inference import ChatCompletionsClient
 from azure.ai.inference.models import SystemMessage, UserMessage
@@ -120,6 +120,31 @@ class GitHubModelsProvider:
             raise ProviderTransientError(
                 f"connection error: {exc}", status_code=None) from exc
         return _to_chat_response(resp)
+
+    def complete_stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        temperature: float,
+        response_format: dict | None = None,
+    ) -> Iterator[str]:
+        """Fallback streaming for GitHub Models.
+
+        The Azure AI Inference SDK's streaming surface has been
+        unstable across versions; rather than couple this provider to
+        a specific SDK API shape, we fall back to a single-chunk yield
+        from the non-streaming ``complete()`` call. The caller's
+        progress callback fires once with the full content. For real
+        token-level streaming, route through ``openai`` or
+        ``anthropic`` providers instead.
+        """
+        resp = self.complete(
+            model=model, messages=messages,
+            temperature=temperature, response_format=response_format,
+        )
+        if resp.content:
+            yield resp.content
 
 
 def _retry_after(exc: HttpResponseError) -> float | None:

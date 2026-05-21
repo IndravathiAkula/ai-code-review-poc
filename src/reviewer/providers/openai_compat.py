@@ -9,7 +9,7 @@ We disable the SDK's built-in retry loop (``max_retries=0``) so our
 """
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterator
 
 from .base import (
     ChatResponse, Provider, ProviderPermanentError, ProviderTransientError, Usage,
@@ -83,6 +83,65 @@ class OpenAICompatProvider:
                 ) from exc
             raise ProviderPermanentError(str(exc), status_code=status) from exc
         return _to_chat_response(resp)
+
+
+    def complete_stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        temperature: float,
+        response_format: dict | None = None,
+    ) -> Iterator[str]:
+        """Native OpenAI-style streaming.
+
+        Yields text deltas as ``ChatCompletionChunk`` objects arrive. The
+        SDK manages SSE framing; we just pull ``.choices[0].delta.content``
+        from each event and yield it. Exceptions from the underlying
+        ``create()`` call OR mid-stream are translated to the neutral
+        ProviderError types."""
+        from openai import (
+            APIConnectionError, APIStatusError, APITimeoutError,
+        )
+
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": True,
+        }
+        if response_format is not None:
+            kwargs["response_format"] = response_format
+        try:
+            stream = self._client.chat.completions.create(**kwargs)
+        except (APIConnectionError, APITimeoutError) as exc:
+            raise ProviderTransientError(
+                f"connection error: {exc}") from exc
+        except APIStatusError as exc:
+            status = getattr(exc, "status_code", None)
+            if status in _RETRYABLE_STATUS:
+                raise ProviderTransientError(
+                    str(exc),
+                    status_code=status,
+                    retry_after_seconds=_retry_after_from_response(exc),
+                ) from exc
+            raise ProviderPermanentError(str(exc), status_code=status) from exc
+
+        try:
+            for chunk in stream:
+                delta = getattr(chunk.choices[0], "delta", None) if chunk.choices else None
+                text = getattr(delta, "content", None) if delta else None
+                if text:
+                    yield text
+        except (APIConnectionError, APITimeoutError) as exc:
+            raise ProviderTransientError(
+                f"connection error mid-stream: {exc}") from exc
+        except APIStatusError as exc:
+            status = getattr(exc, "status_code", None)
+            if status in _RETRYABLE_STATUS:
+                raise ProviderTransientError(
+                    str(exc), status_code=status) from exc
+            raise ProviderPermanentError(str(exc), status_code=status) from exc
 
 
 def _retry_after_from_response(exc) -> float | None:

@@ -9,7 +9,7 @@ doesn't need to know who served the call.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Iterator, Protocol, runtime_checkable
 
 
 @dataclass
@@ -62,6 +62,24 @@ class Provider(Protocol):
         temperature: float,
         response_format: dict | None = None,
     ) -> ChatResponse: ...
+
+    def complete_stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        temperature: float,
+        response_format: dict | None = None,
+    ) -> Iterator[str]:
+        """Yield text deltas as they arrive from the provider.
+
+        After the generator is fully consumed, the concatenation of the
+        yielded chunks equals what ``complete().content`` would have
+        returned for the same arguments. Implementations may yield the
+        full content in a single chunk if the underlying SDK doesn't
+        support native streaming — the caller treats both shapes
+        identically."""
+        ...
 
 
 class ProviderError(Exception):

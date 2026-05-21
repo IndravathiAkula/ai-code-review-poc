@@ -19,7 +19,7 @@ Translation notes for the Provider abstraction:
 from __future__ import annotations
 
 import sys
-from typing import Any
+from typing import Any, Iterator
 
 from .base import (
     ChatResponse, Provider, ProviderPermanentError, ProviderTransientError, Usage,
@@ -114,6 +114,49 @@ class AnthropicProvider:
             raise  # unreachable; satisfies type checker
 
         return _to_chat_response(resp)
+
+    def complete_stream(
+        self,
+        *,
+        model: str,
+        messages: list[dict[str, Any]],
+        temperature: float,
+        response_format: dict | None = None,
+    ) -> Iterator[str]:
+        """Anthropic Messages streaming.
+
+        The SDK's ``messages.stream()`` returns an event stream; we just
+        consume the text deltas. Prompt caching still applies — the
+        cache hit/write counts arrive on the final ``message_delta``
+        event, but ``complete_stream`` doesn't surface them (the caller
+        of ``complete()`` gets the full usage; streaming consumers get
+        text only).
+        """
+        system_text, user_messages = _extract_system_and_messages(messages)
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": self._max_tokens,
+            "temperature": temperature,
+            "messages": user_messages,
+        }
+        if system_text is not None:
+            if self._cache:
+                kwargs["system"] = [{
+                    "type": "text",
+                    "text": system_text,
+                    "cache_control": {"type": "ephemeral"},
+                }]
+            else:
+                kwargs["system"] = system_text
+
+        try:
+            with self._client.messages.stream(**kwargs) as stream:
+                for text in stream.text_stream:
+                    if text:
+                        yield text
+        except Exception as exc:
+            self._translate_and_raise(exc)
+            raise  # unreachable
 
     @staticmethod
     def _translate_and_raise(exc: Exception) -> None:

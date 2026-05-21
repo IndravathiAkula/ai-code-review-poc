@@ -13,6 +13,8 @@ from azure.core.exceptions import HttpResponseError, ServiceRequestError
 
 from .pricing import cost_usd
 from .prompts import SYSTEM, USER_TEMPLATE, build_system_prompt
+from typing import Callable, Iterator
+
 from .providers import (
     ChatResponse, Provider, ProviderPermanentError, ProviderTransientError,
     Usage, build_provider,
@@ -245,6 +247,13 @@ class _LegacyClientAdapter:
             )
         return ChatResponse(content=content, usage=usage)
 
+    def complete_stream(self, **kwargs) -> Iterator[str]:
+        # Legacy clients don't implement streaming; yield the whole
+        # content in one chunk so the caller path is uniform.
+        resp = self.complete(**kwargs)
+        if resp.content:
+            yield resp.content
+
 
 def _review_chunk(
     *,
@@ -264,6 +273,7 @@ def _review_chunk(
     task_model: str | None = None,
     budget: "_CostBudget | None" = None,
     prompt_extras_by_language: dict[str, str] | None = None,
+    stream_callback: Callable[[str, str], None] | None = None,
 ) -> list[dict]:
     # Cost cap: if a prior chunk pushed the running total past the cap,
     # skip this chunk entirely. The first chunk that trips it logs the
@@ -281,21 +291,41 @@ def _review_chunk(
         diff=hunks_text,
     )
 
+    call_kwargs = dict(
+        model=model,
+        messages=[
+            {"role": "system",
+             "content": build_system_prompt(lang, prompt_extras_by_language)},
+            {"role": "user", "content": user},
+        ],
+        temperature=0.2,
+        response_format={"type": "json_object"},
+    )
+
     t0 = time.perf_counter()
     try:
-        resp = _call_with_retry(
-            provider.complete,
-            max_retries=max_retries,
-            base_seconds=retry_base_seconds,
-            model=model,
-            messages=[
-                {"role": "system",
-                 "content": build_system_prompt(lang, prompt_extras_by_language)},
-                {"role": "user", "content": user},
-            ],
-            temperature=0.2,
-            response_format={"type": "json_object"},
-        )
+        if stream_callback is not None:
+            # Streaming path: yield deltas to the callback as they
+            # arrive, then assemble a ChatResponse from the full text.
+            # Usage isn't surfaced by the streaming SDKs uniformly, so
+            # the cost numbers will be missing for streamed chunks —
+            # acceptable for the local CLI / progress-feedback use case.
+            parts: list[str] = []
+            for delta in provider.complete_stream(**call_kwargs):
+                parts.append(delta)
+                try:
+                    stream_callback(path, delta)
+                except Exception as cb_exc:
+                    print(f"[warn] stream callback raised: {cb_exc}",
+                          file=sys.stderr)
+            resp = ChatResponse(content="".join(parts), usage=None)
+        else:
+            resp = _call_with_retry(
+                provider.complete,
+                max_retries=max_retries,
+                base_seconds=retry_base_seconds,
+                **call_kwargs,
+            )
     except (ProviderPermanentError, ProviderTransientError,
             HttpResponseError, ServiceRequestError) as exc:
         # Out of retries — skip this chunk so the rest of the PR still gets
@@ -385,6 +415,7 @@ def review_patch(
     prompt_extras_by_language: dict[str, str] | None = None,
     max_files_per_pr: int | None = None,
     max_tokens_per_pr: int | None = None,
+    stream_callback: Callable[[str, str], None] | None = None,
 ) -> list[dict]:
     """Review a unified diff and return a list of findings (dicts).
 
@@ -488,6 +519,7 @@ def review_patch(
         max_retries=max_retries, retry_base_seconds=retry_base_seconds,
         budget=budget,
         prompt_extras_by_language=prompt_extras_by_language,
+        stream_callback=stream_callback,
     )
     workers = max(1, min(concurrency, len(tasks)))
 

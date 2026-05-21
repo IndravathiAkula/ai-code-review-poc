@@ -36,6 +36,11 @@ def main() -> int:
                     choices=["low", "medium", "high", "critical"])
     ap.add_argument("--json", action="store_true",
                     help="Emit JSON instead of a table.")
+    ap.add_argument("--stream", action="store_true",
+                    help="Print model output to stderr as it streams. "
+                         "Useful as a 'is it doing anything?' indicator "
+                         "on slow providers. Doesn't change the final "
+                         "findings — JSON is parsed at end-of-stream.")
     args = ap.parse_args()
 
     cfg = effective_config(config_file=load_config(args.config))
@@ -44,6 +49,15 @@ def main() -> int:
     min_severity = args.min_severity or cfg.min_severity
 
     diff_text = Path(args.diff).read_text(encoding="utf-8")
+
+    stream_callback = None
+    if args.stream:
+        def stream_callback(path: str, delta: str) -> None:
+            # Lightweight indicator: print deltas without paths to keep
+            # output readable on long files.
+            sys.stderr.write(delta)
+            sys.stderr.flush()
+
     findings = review_patch(
         diff_text,
         model=model,
@@ -57,7 +71,11 @@ def main() -> int:
         max_retries=cfg.max_retries,
         retry_base_seconds=cfg.retry_base_seconds,
         models_by_language=cfg.models_by_language or None,
+        prompt_extras_by_language=cfg.prompt_extras_by_language or None,
+        stream_callback=stream_callback,
     )
+    if args.stream:
+        sys.stderr.write("\n")
 
     if args.json:
         print(json.dumps({"model": model, "findings": findings}, indent=2))

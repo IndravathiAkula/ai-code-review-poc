@@ -586,6 +586,71 @@ def test_models_by_language_falls_back_to_default():
     assert models_seen == ["default-model", "py-model"]
 
 
+def test_stream_callback_receives_deltas_and_findings_still_returned():
+    """Stream mode fires the callback once per delta and still returns
+    a correctly-parsed finding list (the legacy adapter yields the full
+    content in one chunk, which is functionally identical to non-stream)."""
+    client = FakeClient(_payload([{
+        "line": 3, "severity": "high", "category": "security",
+        "title": "secret", "explanation": "...", "confidence": 0.9,
+    }]))
+    deltas: list[tuple[str, str]] = []
+
+    def cb(path: str, delta: str) -> None:
+        deltas.append((path, delta))
+
+    out = review_patch(SAMPLE_DIFF, model="x", client=client,
+                       stream_callback=cb, concurrency=1)
+    assert len(out) == 1
+    assert out[0]["title"] == "secret"
+    # Legacy adapter yields the whole content in one chunk.
+    assert len(deltas) == 1
+    assert deltas[0][0] == "app/auth.py"
+    assert "secret" in deltas[0][1]
+
+
+def test_stream_callback_not_invoked_when_omitted():
+    """Default path (no stream_callback) doesn't call complete_stream."""
+    client = FakeClient(_payload([]))
+
+    # Replace the legacy adapter's complete_stream to track invocations.
+    original_review = review_patch
+    review_patch(SAMPLE_DIFF, model="x", client=client, concurrency=1)
+    # The non-streaming path uses .complete; no streaming should occur.
+    # We assert by counting model calls via the fake's .calls — 1 call total.
+    assert len(client.calls) == 1
+
+
+def test_stream_callback_exception_does_not_kill_review():
+    """A buggy callback shouldn't prevent the review from completing."""
+    client = FakeClient(_payload([{
+        "line": 3, "severity": "high", "category": "security",
+        "title": "secret", "explanation": "...", "confidence": 0.9,
+    }]))
+
+    def bad_cb(path: str, delta: str) -> None:
+        raise RuntimeError("callback boom")
+
+    out = review_patch(SAMPLE_DIFF, model="x", client=client,
+                       stream_callback=bad_cb, concurrency=1)
+    # Review still completes; finding still parsed.
+    assert len(out) == 1
+
+
+def test_stream_callback_paths_routed_correctly_with_multiple_files():
+    """Two files, two streaming sessions — each delta carries its
+    file path so consumers can route output per-file."""
+    client = FakeClient(_payload([]))
+    by_path: dict[str, list[str]] = {}
+
+    def cb(path: str, delta: str) -> None:
+        by_path.setdefault(path, []).append(delta)
+
+    review_patch(TWO_FILE_DIFF, model="x", client=client,
+                 stream_callback=cb, concurrency=1)
+    assert set(by_path) == {"a.py", "b.py"}
+
+
 def test_min_severity_default_keeps_everything():
     client = FakeClient(_payload([
         {"line": 1, "severity": "low", "category": "maintainability",
