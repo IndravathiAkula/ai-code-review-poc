@@ -44,6 +44,10 @@ class ReviewConfig:
     block_patterns: tuple[str, ...] = ()
     post_summary: bool = True
     models_by_language: dict[str, str] = field(default_factory=dict)
+    # Labels that cause the reviewer to exit immediately with no model
+    # calls. Useful for huge refactors, generated-code PRs, dep bumps,
+    # etc. Default includes the common ``skip-ai-review`` convention.
+    skip_labels: tuple[str, ...] = ("skip-ai-review",)
     # Cost caps — 0 means unlimited. ``max_files_per_pr`` is enforced
     # pre-flight (excess chunks are skipped before any model call);
     # ``max_tokens_per_pr`` is enforced at runtime against the running
@@ -69,6 +73,7 @@ _ENV_OVERRIDES: dict[str, str] = {
     "post_summary": "REVIEWER_POST_SUMMARY",
     "max_files_per_pr": "REVIEWER_MAX_FILES_PER_PR",
     "max_tokens_per_pr": "REVIEWER_MAX_TOKENS_PER_PR",
+    "skip_labels": "REVIEWER_SKIP_LABELS",
 }
 
 
@@ -84,7 +89,7 @@ def _coerce(name: str, value: Any) -> Any:
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in {"1", "true", "yes", "on"}
-    if name == "block_patterns":
+    if name in {"block_patterns", "skip_labels"}:
         if isinstance(value, str):
             return tuple(p.strip() for p in value.split(",") if p.strip())
         if value is None:

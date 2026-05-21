@@ -66,6 +66,10 @@ jobs:
           # or to bound spend on monorepo-scale changes.
           REVIEWER_MAX_FILES_PER_PR: "0"
           REVIEWER_MAX_TOKENS_PER_PR: "0"
+          # PRs with any of these labels exit the workflow cleanly
+          # without spending tokens. Comma-separated. Set to empty
+          # string to disable label-gating entirely.
+          REVIEWER_SKIP_LABELS: "skip-ai-review"
           REVIEWER_POST_SUMMARY: "true"
           REVIEWER_ARTIFACT_PATH: ai-review-run.json
           REVIEWER_BLOCK_PATTERNS: ""

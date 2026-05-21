@@ -48,6 +48,24 @@ SENSITIVE_FILE_PATTERNS: tuple[str, ...] = (
 )
 
 
+def find_skip_label(
+    pr_labels: Iterable[str],
+    skip_list: Iterable[str],
+) -> str | None:
+    """Return the first label name that appears in both ``pr_labels`` and
+    ``skip_list``, or ``None`` if no overlap.
+
+    Used by the CI script to short-circuit the review when a maintainer
+    has tagged a PR with e.g. ``skip-ai-review`` — no model calls, no
+    cost, just a log line and clean exit.
+    """
+    skip_set = set(skip_list)
+    for label in pr_labels:
+        if label in skip_set:
+            return label
+    return None
+
+
 def is_sensitive_path(
     path: str,
     *,

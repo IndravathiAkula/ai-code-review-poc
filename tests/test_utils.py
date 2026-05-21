@@ -10,7 +10,7 @@ from reviewer.utils import (
     language_for, should_skip, valid_new_lines,
     dedupe, filter_by_confidence, filter_by_severity,
     sort_findings, format_comment, AI_COMMENT_TAG,
-    is_sensitive_path,
+    is_sensitive_path, find_skip_label,
 )
 
 
@@ -152,6 +152,36 @@ def test_is_sensitive_path_extra_patterns_match_full_path():
                              extra_patterns=("*infra/prod/*",))
     assert not is_sensitive_path("infra/dev/db.sql",
                                  extra_patterns=("*infra/prod/*",))
+
+
+def test_find_skip_label_returns_first_match():
+    matched = find_skip_label(
+        ["bug", "skip-ai-review", "needs-design"],
+        ["skip-ai-review", "wip"],
+    )
+    assert matched == "skip-ai-review"
+
+
+def test_find_skip_label_returns_none_when_no_overlap():
+    assert find_skip_label(["bug", "wip"], ["skip-ai-review"]) is None
+
+
+def test_find_skip_label_empty_pr_labels():
+    assert find_skip_label([], ["skip-ai-review"]) is None
+
+
+def test_find_skip_label_empty_skip_list():
+    assert find_skip_label(["skip-ai-review", "bug"], []) is None
+
+
+def test_find_skip_label_preserves_pr_label_order():
+    """When multiple labels match, the one that appears first in pr_labels
+    wins — keeps the log message predictable."""
+    matched = find_skip_label(
+        ["second-skip", "first-skip", "bug"],
+        ["first-skip", "second-skip"],
+    )
+    assert matched == "second-skip"
 
 
 def test_format_comment_has_tag_and_fix():

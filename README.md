@@ -253,6 +253,8 @@ min_severity: low            # low | medium | high | critical
 concurrency: 4
 max_files_per_pr: 0          # 0 = unlimited; pre-flight cap on chunks reviewed
 max_tokens_per_pr: 0         # 0 = unlimited; runtime cap on cumulative tokens
+skip_labels:                 # PRs with any of these labels skip review
+  - skip-ai-review           # (set to [] to disable label gating entirely)
 max_diff_chars: 8000
 max_retries: 3
 retry_base_seconds: 1.0

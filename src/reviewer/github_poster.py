@@ -192,6 +192,19 @@ def upsert_summary_comment(
     return "created"
 
 
+def fetch_pr_labels(token: str, repo_full_name: str, pr_number: int) -> list[str]:
+    """Return the list of label names on a PR.
+
+    Cheap call — used early in the pipeline so we can short-circuit
+    when a ``skip-ai-review`` label is present, before spending any
+    model tokens.
+    """
+    gh = Github(token)
+    repo = gh.get_repo(repo_full_name)
+    pr = repo.get_pull(pr_number)
+    return [label.name for label in pr.labels]
+
+
 def fetch_pr_diff(token: str, repo_full_name: str, pr_number: int) -> tuple[str, str, str]:
     """Return (diff_text, title, body) for a PR."""
     import requests

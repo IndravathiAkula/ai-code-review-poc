@@ -13,12 +13,13 @@ from dotenv import load_dotenv
 from reviewer import review_patch
 from reviewer.config import effective_config, load_config
 from reviewer.github_poster import (
-    fetch_pr_diff, post_findings, upsert_summary_comment,
+    fetch_pr_diff, fetch_pr_labels, post_findings, upsert_summary_comment,
 )
 from reviewer.providers import build_provider
 from reviewer.reporting import (
     render_markdown, summarize_run, write_artifact, write_step_summary,
 )
+from reviewer.utils import find_skip_label
 
 
 def _require(name: str) -> str:
@@ -47,7 +48,24 @@ def main() -> int:
           f"{cfg.provider}/{cfg.model}")
     print(f"[info] config: min_conf={cfg.min_confidence} "
           f"min_sev={cfg.min_severity} concurrency={cfg.concurrency} "
-          f"block_patterns={list(cfg.block_patterns)}")
+          f"block_patterns={list(cfg.block_patterns)} "
+          f"skip_labels={list(cfg.skip_labels)}")
+
+    # Short-circuit on opt-out label BEFORE any model cost is incurred.
+    if cfg.skip_labels:
+        try:
+            pr_labels = fetch_pr_labels(token, repo_full, pr_number)
+        except Exception as exc:
+            # Don't let a label fetch failure block reviews; log and continue.
+            print(f"[warn] could not fetch PR labels ({exc}); "
+                  f"proceeding with review", file=sys.stderr)
+        else:
+            matched = find_skip_label(pr_labels, cfg.skip_labels)
+            if matched:
+                print(f"[info] skipped: label {matched!r} present on "
+                      f"PR #{pr_number} (matched {list(cfg.skip_labels)})")
+                return 0
+
     provider = build_provider(cfg.provider)
     diff, title, body = fetch_pr_diff(token, repo_full, pr_number)
     print(f"[info] diff size: {len(diff)} bytes")

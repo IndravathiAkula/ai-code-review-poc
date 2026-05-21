@@ -145,3 +145,29 @@ def test_effective_config_models_by_language_from_yaml():
         "python": "openai/gpt-4o",
         "typescript": "openai/gpt-4o-mini",
     }
+
+
+def test_effective_config_skip_labels_default_includes_skip_ai_review():
+    cfg = effective_config(env={})
+    assert "skip-ai-review" in cfg.skip_labels
+
+
+def test_effective_config_skip_labels_from_yaml_list():
+    cfg = effective_config(config_file={
+        "skip_labels": ["wip", "do-not-review"],
+    })
+    assert cfg.skip_labels == ("wip", "do-not-review")
+
+
+def test_effective_config_skip_labels_from_env_string():
+    cfg = effective_config(env={
+        "REVIEWER_SKIP_LABELS": "wip, dependencies,generated-code",
+    })
+    assert cfg.skip_labels == ("wip", "dependencies", "generated-code")
+
+
+def test_effective_config_skip_labels_yaml_empty_disables_gating():
+    """Setting skip_labels to [] explicitly is how consumers opt OUT
+    of label gating even though the default is non-empty."""
+    cfg = effective_config(config_file={"skip_labels": []})
+    assert cfg.skip_labels == ()
