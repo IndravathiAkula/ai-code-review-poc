@@ -1,3 +1,30 @@
+from __future__ import annotations
+
+
+def build_system_prompt(
+    lang: str,
+    extras_by_language: dict[str, str] | None = None,
+) -> str:
+    """Return the system prompt with optional per-language rule extras
+    appended.
+
+    ``extras_by_language`` maps a normalized language name (matching
+    ``utils.language_for`` output — ``python``, ``typescript``, etc.) to a
+    block of additional rules. When a match is found, those rules are
+    appended to the base ``SYSTEM`` prompt under a header so the model
+    knows they're language-specific.
+
+    Returns ``SYSTEM`` unchanged when ``extras_by_language`` is empty or
+    has no entry for ``lang``.
+    """
+    if not extras_by_language:
+        return SYSTEM
+    extras = extras_by_language.get(lang)
+    if not extras or not extras.strip():
+        return SYSTEM
+    return f"{SYSTEM}\n\nAdditional rules for {lang} code:\n{extras.rstrip()}"
+
+
 SYSTEM = """You are a staff software engineer performing code review.
 Review ONLY the added/modified lines in the provided unified diff.
 Prioritize findings in this order: correctness > security > performance > maintainability.

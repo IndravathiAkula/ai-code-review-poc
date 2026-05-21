@@ -166,6 +166,24 @@ def test_effective_config_skip_labels_from_env_string():
     assert cfg.skip_labels == ("wip", "dependencies", "generated-code")
 
 
+def test_effective_config_prompt_extras_by_language_from_yaml():
+    cfg = effective_config(config_file={
+        "prompt_extras_by_language": {
+            "typescript": "- useEffect missing deps is a bug.",
+            "python": "- mutable default args are bugs.",
+        },
+    })
+    assert cfg.prompt_extras_by_language == {
+        "typescript": "- useEffect missing deps is a bug.",
+        "python": "- mutable default args are bugs.",
+    }
+
+
+def test_effective_config_prompt_extras_default_empty():
+    cfg = effective_config(env={})
+    assert cfg.prompt_extras_by_language == {}
+
+
 def test_effective_config_skip_labels_yaml_empty_disables_gating():
     """Setting skip_labels to [] explicitly is how consumers opt OUT
     of label gating even though the default is non-empty."""

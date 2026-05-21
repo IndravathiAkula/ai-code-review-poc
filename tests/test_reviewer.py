@@ -520,6 +520,60 @@ def test_models_by_language_routes_per_file():
     assert sorted(models_seen) == ["py-model", "ts-model"]
 
 
+def test_prompt_extras_by_language_appends_rules_to_system_message():
+    """The per-language extras must end up in the system message sent to
+    the provider — not just stored in config."""
+    client = FakeClient(_payload([]))
+    review_patch(
+        SAMPLE_DIFF, model="x", client=client,
+        prompt_extras_by_language={
+            "python": "- Mutable default arguments are bugs.\n- Detect SQL injection in raw queries.",
+        },
+        concurrency=1,
+    )
+    # SAMPLE_DIFF is app/auth.py -> python -> extras should appear.
+    sys_msg = client.calls[0]["messages"][0].content
+    assert "Mutable default arguments are bugs." in sys_msg
+    assert "Detect SQL injection in raw queries." in sys_msg
+    assert "Additional rules for python code:" in sys_msg
+
+
+def test_prompt_extras_by_language_omitted_when_language_not_in_map():
+    """A Python file with only TypeScript extras configured gets the base
+    system prompt unchanged."""
+    client = FakeClient(_payload([]))
+    review_patch(
+        SAMPLE_DIFF, model="x", client=client,
+        prompt_extras_by_language={
+            "typescript": "- useEffect missing deps is a bug.",
+        },
+        concurrency=1,
+    )
+    sys_msg = client.calls[0]["messages"][0].content
+    assert "Additional rules for" not in sys_msg
+    assert "useEffect" not in sys_msg
+
+
+def test_prompt_extras_by_language_routes_per_file():
+    """Two files, two languages — each gets the right system prompt."""
+    diff = PY_AND_TS_DIFF  # has a.py and b.ts (from earlier tests)
+    client = FakeClient(_payload([]))
+    review_patch(
+        diff, model="x", client=client,
+        prompt_extras_by_language={
+            "python": "- Python-specific rule X.",
+            "typescript": "- TypeScript-specific rule Y.",
+        },
+        concurrency=1,
+    )
+    sys_msgs = [c["messages"][0].content for c in client.calls]
+    py_msg = next(m for m in sys_msgs if "Python-specific rule X." in m)
+    ts_msg = next(m for m in sys_msgs if "TypeScript-specific rule Y." in m)
+    # Each file's prompt has ONLY its own language extras, not the other's.
+    assert "TypeScript-specific" not in py_msg
+    assert "Python-specific" not in ts_msg
+
+
 def test_models_by_language_falls_back_to_default():
     """A language not in the override map uses the run-wide default."""
     client = FakeClient(_payload([]))

@@ -265,6 +265,14 @@ block_patterns:              # extra globs that never reach the model
 models_by_language:          # per-language overrides; falls back to `model`
   python: openai/gpt-4o
   typescript: openai/gpt-4o-mini
+
+prompt_extras_by_language:   # appended to the system prompt per file language
+  typescript: |
+    - useEffect with missing dependency array is a bug, not a style nit.
+    - Untyped `any` in a public API surface is a finding.
+  python: |
+    - Mutable default arguments are bugs.
+    - bare `except:` clauses should be flagged.
 ```
 
 Precedence (highest first): explicit CLI flag → `.ai-review.yml` → env var

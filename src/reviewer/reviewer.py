@@ -12,7 +12,7 @@ from unidiff import PatchSet
 from azure.core.exceptions import HttpResponseError, ServiceRequestError
 
 from .pricing import cost_usd
-from .prompts import SYSTEM, USER_TEMPLATE
+from .prompts import SYSTEM, USER_TEMPLATE, build_system_prompt
 from .providers import (
     ChatResponse, Provider, ProviderPermanentError, ProviderTransientError,
     Usage, build_provider,
@@ -263,6 +263,7 @@ def _review_chunk(
     retry_base_seconds: float,
     task_model: str | None = None,
     budget: "_CostBudget | None" = None,
+    prompt_extras_by_language: dict[str, str] | None = None,
 ) -> list[dict]:
     # Cost cap: if a prior chunk pushed the running total past the cap,
     # skip this chunk entirely. The first chunk that trips it logs the
@@ -288,7 +289,8 @@ def _review_chunk(
             base_seconds=retry_base_seconds,
             model=model,
             messages=[
-                {"role": "system", "content": SYSTEM},
+                {"role": "system",
+                 "content": build_system_prompt(lang, prompt_extras_by_language)},
                 {"role": "user", "content": user},
             ],
             temperature=0.2,
@@ -380,6 +382,7 @@ def review_patch(
     max_retries: int | None = None,
     retry_base_seconds: float | None = None,
     models_by_language: dict[str, str] | None = None,
+    prompt_extras_by_language: dict[str, str] | None = None,
     max_files_per_pr: int | None = None,
     max_tokens_per_pr: int | None = None,
 ) -> list[dict]:
@@ -484,6 +487,7 @@ def review_patch(
         usage_log=usage_log, log_lock=log_lock,
         max_retries=max_retries, retry_base_seconds=retry_base_seconds,
         budget=budget,
+        prompt_extras_by_language=prompt_extras_by_language,
     )
     workers = max(1, min(concurrency, len(tasks)))
 

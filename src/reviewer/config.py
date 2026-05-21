@@ -44,6 +44,12 @@ class ReviewConfig:
     block_patterns: tuple[str, ...] = ()
     post_summary: bool = True
     models_by_language: dict[str, str] = field(default_factory=dict)
+    # Per-language extra rules appended to the system prompt. Maps
+    # language name (matching ``utils.language_for``: ``python``,
+    # ``typescript``, etc.) to a multi-line rules block. Useful when
+    # mainstream prompts don't cover a stack-specific bug class
+    # (React useEffect deps, Python mutable default args, etc.).
+    prompt_extras_by_language: dict[str, str] = field(default_factory=dict)
     # Labels that cause the reviewer to exit immediately with no model
     # calls. Useful for huge refactors, generated-code PRs, dep bumps,
     # etc. Default includes the common ``skip-ai-review`` convention.
@@ -95,7 +101,7 @@ def _coerce(name: str, value: Any) -> Any:
         if value is None:
             return ()
         return tuple(value)
-    if name == "models_by_language":
+    if name in {"models_by_language", "prompt_extras_by_language"}:
         return dict(value or {})
     return value  # str fields pass through
 
