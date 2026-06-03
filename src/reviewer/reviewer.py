@@ -273,6 +273,7 @@ def _review_chunk(
     task_model: str | None = None,
     budget: "_CostBudget | None" = None,
     prompt_extras_by_language: dict[str, str] | None = None,
+    include_maintainability_findings: bool = False,
     stream_callback: Callable[[str, str], None] | None = None,
 ) -> list[dict]:
     # Cost cap: if a prior chunk pushed the running total past the cap,
@@ -295,7 +296,10 @@ def _review_chunk(
         model=model,
         messages=[
             {"role": "system",
-             "content": build_system_prompt(lang, prompt_extras_by_language)},
+             "content": build_system_prompt(
+                 lang, prompt_extras_by_language,
+                 include_maintainability=include_maintainability_findings,
+             )},
             {"role": "user", "content": user},
         ],
         temperature=0.2,
@@ -413,6 +417,7 @@ def review_patch(
     retry_base_seconds: float | None = None,
     models_by_language: dict[str, str] | None = None,
     prompt_extras_by_language: dict[str, str] | None = None,
+    include_maintainability_findings: bool = False,
     max_files_per_pr: int | None = None,
     max_tokens_per_pr: int | None = None,
     stream_callback: Callable[[str, str], None] | None = None,
@@ -519,6 +524,7 @@ def review_patch(
         max_retries=max_retries, retry_base_seconds=retry_base_seconds,
         budget=budget,
         prompt_extras_by_language=prompt_extras_by_language,
+        include_maintainability_findings=include_maintainability_findings,
         stream_callback=stream_callback,
     )
     workers = max(1, min(concurrency, len(tasks)))

@@ -86,6 +86,7 @@ def main() -> int:
         retry_base_seconds=cfg.retry_base_seconds,
         models_by_language=cfg.models_by_language or None,
         prompt_extras_by_language=cfg.prompt_extras_by_language or None,
+        include_maintainability_findings=cfg.include_maintainability_findings,
         max_files_per_pr=cfg.max_files_per_pr,
         max_tokens_per_pr=cfg.max_tokens_per_pr,
         provider=provider,

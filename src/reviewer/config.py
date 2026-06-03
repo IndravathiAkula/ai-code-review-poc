@@ -60,6 +60,12 @@ class ReviewConfig:
     # token total reported by completed chunks.
     max_files_per_pr: int = 0
     max_tokens_per_pr: int = 0
+    # Opt-in: also surface lint-class maintainability findings (unused
+    # vars, redeclaration in same scope, deep nesting, redundant logic).
+    # Off by default because deterministic linters (ruff, eslint, etc.)
+    # already cover this cheaply; enable it for repos that don't run a
+    # linter in PR CI.
+    include_maintainability_findings: bool = False
 
 
 _KNOWN_KEYS: set[str] = {f.name for f in fields(ReviewConfig)}
@@ -80,6 +86,7 @@ _ENV_OVERRIDES: dict[str, str] = {
     "max_files_per_pr": "REVIEWER_MAX_FILES_PER_PR",
     "max_tokens_per_pr": "REVIEWER_MAX_TOKENS_PER_PR",
     "skip_labels": "REVIEWER_SKIP_LABELS",
+    "include_maintainability_findings": "REVIEWER_INCLUDE_MAINTAINABILITY",
 }
 
 
@@ -91,7 +98,7 @@ def _coerce(name: str, value: Any) -> Any:
     if name in {"concurrency", "max_diff_chars", "max_retries",
                 "max_files_per_pr", "max_tokens_per_pr"}:
         return int(value)
-    if name == "post_summary":
+    if name in {"post_summary", "include_maintainability_findings"}:
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in {"1", "true", "yes", "on"}
