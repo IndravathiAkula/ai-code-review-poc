@@ -46,6 +46,10 @@ class RunSummary:
         default_factory=lambda: datetime.now(timezone.utc).isoformat())
     # Surfaced so the dashboard can split cost/quality by provider.
     provider: str = ""
+    # PR-level findings from the "senior engineer" pass — architectural
+    # / cross-file concerns rendered in the summary comment because they
+    # have no line anchor for an inline comment.
+    pr_level_findings: list = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -86,6 +90,7 @@ def summarize_run(
     post_report: dict,
     usage_log: list[dict],
     wall_seconds: float,
+    pr_level_findings: list[dict] | None = None,
 ) -> RunSummary:
     """Roll up findings + post-report + usage_log into a single summary."""
     severity_counts: Counter = Counter(
@@ -117,6 +122,7 @@ def summarize_run(
         cache_read_tokens=cache_read,
         cache_creation_tokens=cache_write,
         provider=provider,
+        pr_level_findings=list(pr_level_findings or []),
     )
 
 
@@ -161,6 +167,7 @@ def render_markdown(summary: RunSummary) -> str:
         f"| Findings kept (unchanged) | {summary.kept} |",
         f"| Stale comments removed | {summary.removed_stale} |",
         f"| Skipped (errors) | {summary.skipped} |",
+        f"| PR-level findings | {len(summary.pr_level_findings)} |",
         "",
         f"**Severity breakdown:** {_fmt_severity_breakdown(summary.severity_counts)}  ",
         f"**Tokens:** {summary.total_tokens:,} "
@@ -173,6 +180,33 @@ def render_markdown(summary: RunSummary) -> str:
             f"{summary.cache_creation_tokens:,} writes  "
         )
     lines.append(f"**Estimated cost:** {_fmt_cost(summary.cost_usd)}")
+    if summary.pr_level_findings:
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+        lines.append("### PR-level review")
+        lines.append("")
+        lines.append(
+            "Concerns a per-file review can't see — architecture, tests, "
+            "docs, breaking changes."
+        )
+        lines.append("")
+        for f in summary.pr_level_findings:
+            sev = str(f.get("severity", "low")).upper()
+            cat = f.get("category", "maintainability")
+            title = (f.get("title") or "").strip()
+            path = f.get("path") or "(pull request)"
+            conf = float(f.get("confidence", 0.0))
+            explanation = (f.get("explanation") or "").strip()
+            lines.append(
+                f"- **{sev} / {cat}** — {title} "
+                f"_(in {path}, confidence {conf:.2f})_"
+            )
+            if explanation:
+                # Indent so the bullet stays readable in GitHub markdown.
+                for para in explanation.splitlines():
+                    if para.strip():
+                        lines.append(f"  {para.strip()}")
     return "\n".join(lines)
 
 

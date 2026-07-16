@@ -17,6 +17,13 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
+      - name: Mint app installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.REVIEWER_APP_ID }}
+          private-key: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}
+
       - name: Check out the PR (pulmo-FE)
         uses: actions/checkout@v5
         with:
@@ -26,7 +33,7 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: IndravathiAkula/ai-code-review-poc
-          ref: dev
+          ref: v0.2.2                           
           path: .ai-reviewer
 
       - uses: actions/setup-python@v5
@@ -40,38 +47,103 @@ jobs:
 
       - name: Run AI review
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # If GITHUB_TOKEN above is a GitHub App installation token (for
-          # a custom bot identity on comments), uncomment MODEL_API_TOKEN
-          # below so the inference call uses the workflow's auto-token
-          # (which carries models:read via the permissions block above).
-          # MODEL_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}    # ← App token for posting
+          MODEL_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}          # ← workflow token for inference
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          # Multi-provider support. Default is github-models; flip to
-          # groq / openrouter / nvidia / etc. by setting REVIEWER_PROVIDER
-          # and the matching *_API_KEY secret on this repo.
+
+          # --- Provider stack (pick ONE block) ---
+
+          # Default: GitHub Models (free within rate limits).
           REVIEWER_PROVIDER: github-models
-          # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}  # Claude with prompt caching (~40% cheaper on multi-chunk PRs)
-          # GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          # OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           MODEL: openai/gpt-4o-mini
+
+          # Anthropic Claude with prompt caching (cheapest at scale).
+          # Uncomment the three lines below and comment out the two above.
+          # Requires ANTHROPIC_API_KEY in this repo's secrets.
+          # REVIEWER_PROVIDER: anthropic
+          # ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # MODEL: claude-sonnet-4-6
+
+          # Groq Llama 3.3 (fastest inference, sub-second).
+          # REVIEWER_PROVIDER: groq
+          # GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          # MODEL: llama-3.3-70b-versatile
+
+          # OpenRouter (200+ models behind one key — Claude, Gemini, etc).
+          # REVIEWER_PROVIDER: openrouter
+          # OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # MODEL: anthropic/claude-sonnet-4.6
+
+          # --- Filtering floors ---
           MIN_CONFIDENCE: "0.6"
           MIN_SEVERITY: low
+
+          # --- Concurrency / chunking ---
           REVIEWER_CONCURRENCY: "4"
           REVIEWER_MAX_DIFF_CHARS: "8000"
+
+          # --- Retry budget (transient 429 / 5xx) ---
           REVIEWER_MAX_RETRIES: "3"
           REVIEWER_RETRY_BASE_SECONDS: "1.0"
-          # Cost caps (0 = unlimited). Set when reviewing untrusted PRs
-          # or to bound spend on monorepo-scale changes.
-          REVIEWER_MAX_FILES_PER_PR: "0"
-          REVIEWER_MAX_TOKENS_PER_PR: "0"
-          # PRs with any of these labels exit the workflow cleanly
-          # without spending tokens. Comma-separated. Set to empty
-          # string to disable label-gating entirely.
-          REVIEWER_SKIP_LABELS: "skip-ai-review"
+
+          # --- Cost caps (0 = unlimited). Defense against runaway PRs. ---
+          REVIEWER_MAX_FILES_PER_PR: "20"
+          REVIEWER_MAX_TOKENS_PER_PR: "50000"
+
+          # --- Deterministic tooling ---
+          # ruff (Python lint) + bandit (Python SAST) are bundled in
+          # requirements.txt. eslint/tsc run via ``npx --no-install`` — they
+          # only fire if the target repo has its own eslint/tsconfig +
+          # node_modules.
+          REVIEWER_ENABLE_LINTERS: "true"
+          # Off by default: mypy/tsc are slower and can produce pre-existing
+          # noise. Flip on and add ``pip install mypy`` above if you want it.
+          REVIEWER_ENABLE_TYPE_CHECK: "false"
+
+          # --- PR-level review (Sonar-style + senior-engineer lens) ---
+          # One extra LLM call after per-file review that flags concerns
+          # a line-by-line pass can't see: missing tests, breaking API
+          # changes, cross-file architectural smells, scope creep.
+          REVIEWER_ENABLE_PR_LEVEL_REVIEW: "true"
+          # Deterministic PR-level check: prod code changed but no test
+          # files touched. Runs even when the LLM PR-level pass is off.
+          REVIEWER_ENABLE_MISSING_TESTS: "true"
+
+          # --- Repository context awareness (biggest quality lever) ---
+          # For each modified file, git-grep for callers of newly-defined
+          # symbols + include one sibling file for style/conventions.
+          # Requires git on PATH (guaranteed in Actions).
+          REVIEWER_ENABLE_REPO_CONTEXT: "true"
+          REVIEWER_MAX_CONTEXT_FILES: "3"
+          REVIEWER_MAX_CONTEXT_CHARS: "3000"
+
+          # --- Test-quality review ---
+          # Route test files (tests/*, *.test.ts, etc.) to a specialised
+          # prompt focused on test quality (tautological asserts, missing
+          # edge cases, over-mocking) instead of code quality.
+          REVIEWER_ENABLE_TEST_REVIEW: "true"
+
+          # --- Semgrep (multi-language SAST) ---
+          # Opt-in — needs ``semgrep`` on PATH. Install with:
+          #     pip install semgrep
+          # Then flip REVIEWER_ENABLE_SEMGREP to "true".
+          REVIEWER_ENABLE_SEMGREP: "false"
+
+          # --- New-code coverage gate ---
+          # Off by default because your CI needs to produce the report
+          # first (e.g. ``pytest --cov --cov-report=xml``). Flip on once
+          # your workflow writes ``coverage.xml`` or ``lcov.info``.
+          REVIEWER_ENABLE_COVERAGE_GATE: "false"
+          REVIEWER_COVERAGE_REPORT_PATH: coverage.xml
+          REVIEWER_NEW_CODE_COVERAGE_THRESHOLD: "0.8"
+
+          # --- Output & observability ---
           REVIEWER_POST_SUMMARY: "true"
           REVIEWER_ARTIFACT_PATH: ai-review-run.json
+
+          # Extra paths to never send to the model (comma-separated globs).
+          # Built-in defaults already block .env, *.pem, secrets/, .ssh/, etc.
           REVIEWER_BLOCK_PATTERNS: ""
         run: python .ai-reviewer/scripts/review_pr.py
 

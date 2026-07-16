@@ -189,3 +189,39 @@ def test_effective_config_skip_labels_yaml_empty_disables_gating():
     of label gating even though the default is non-empty."""
     cfg = effective_config(config_file={"skip_labels": []})
     assert cfg.skip_labels == ()
+
+
+def test_effective_config_enable_linters_defaults_on():
+    cfg = effective_config(env={})
+    assert cfg.enable_linters is True
+    assert cfg.enable_type_check is False
+
+
+def test_effective_config_enable_linters_env_override():
+    cfg = effective_config(env={
+        "REVIEWER_ENABLE_LINTERS": "false",
+        "REVIEWER_ENABLE_TYPE_CHECK": "true",
+    })
+    assert cfg.enable_linters is False
+    assert cfg.enable_type_check is True
+
+
+def test_effective_config_standards_rules_from_yaml():
+    rules = [
+        {"id": "no-print", "pattern": r"^\s*print\("},
+        {"id": "no-eval",  "pattern": r"\beval\("},
+    ]
+    cfg = effective_config(config_file={"standards_rules": rules})
+    assert cfg.standards_rules == rules
+
+
+def test_effective_config_standards_rules_default_empty():
+    cfg = effective_config(env={})
+    assert cfg.standards_rules == []
+
+
+def test_effective_config_standards_rules_bad_type_warns(capsys):
+    """A non-list ``standards_rules`` shouldn't crash the run."""
+    cfg = effective_config(config_file={"standards_rules": "not-a-list"})
+    assert cfg.standards_rules == []
+    assert "standards_rules" in capsys.readouterr().err

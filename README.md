@@ -21,7 +21,7 @@ ai-code-review-poc/
 ├── eval/
 │   ├── harness.py          # Run N models across a corpus, score them
 │   ├── build_corpus.py     # Regenerate all .diff/.labels.json from structured cases
-│   └── corpus/             # 12 bug cases + 4 clean cases (FP tracking)
+│   └── corpus/             # 30 cases (Python + TypeScript, incl. clean diffs for FP tracking)
 ├── tests/                  # Unit tests for utils
 ├── .github/workflows/ai-review.yml
 ├── requirements.txt
@@ -302,6 +302,211 @@ prompt_extras_by_language:   # appended to the system prompt per file language
 Precedence (highest first): explicit CLI flag → `.ai-review.yml` → env var
 set by the workflow → built-in default. Built-in path blocks (`.env`,
 `*.pem`, `secrets/`, etc.) always apply on top of `block_patterns`.
+
+## Review taxonomy (Sonar-style + senior-engineer lens)
+
+Every finding is classified into one of five categories, matching the
+SonarQube split plus a first-class `security_hotspot` for
+review-me-carefully code:
+
+| Category           | What goes here                                              |
+|--------------------|-------------------------------------------------------------|
+| `correctness`      | Reliability bugs: null derefs, off-by-ones, resource leaks, races, error-handling anti-patterns |
+| `security`         | Vulnerabilities: injection, auth flaws, weak crypto, secrets, unsafe deserialization |
+| `security_hotspot` | New use of `subprocess`/`exec`/`eval` with dynamic input, new crypto primitives, arbitrary-URL fetches, permissive CORS — code a human should *review*, not necessarily a bug |
+| `performance`      | Algorithmic issues, N+1 queries, sync I/O on hot paths, unbounded queries |
+| `maintainability`  | Breaking-change flags, missing docstrings on new public API, complexity, observability holes, dead code |
+
+The system prompt encodes a comprehensive checklist per category (see
+[src/reviewer/prompts.py](src/reviewer/prompts.py)). The classification
+mirrors what a staff engineer would raise in a thorough PR review:
+concrete bugs, real vulns, review-worthy hotspots, perf smells, and
+maintainability concerns — not surface-level style nits.
+
+## Linter and type-checker integration
+
+Alongside every LLM review the reviewer runs deterministic tooling on
+the files the PR touched and posts their findings as inline comments —
+same schema, same idempotent cleanup, tagged `[LINT]` / `[TYPE]` so
+reviewers can tell them apart from `[AI]` findings.
+
+| Tool      | Applies to           | Fills bucket                          | How it's invoked                          | On by default |
+|-----------|----------------------|---------------------------------------|-------------------------------------------|---------------|
+| `ruff`    | `*.py`               | maintainability                       | bundled in `requirements.txt`             | yes           |
+| `bandit`  | `*.py`               | security + hotspot                    | bundled (HIGH-confidence → security; MEDIUM/LOW → hotspot) | yes |
+| `eslint`  | `*.{js,jsx,ts,tsx}`  | maintainability                       | `npx --no-install eslint` (uses repo's own install) | yes (if `.eslintrc*` present) |
+| `semgrep` | ~30 languages        | security + hotspot + maintainability  | `semgrep scan --config auto` (needs `semgrep` on PATH) | no — opt-in via `enable_semgrep` |
+| `mypy`    | `*.py`               | correctness (types)                   | subprocess (repo needs a mypy config)     | no            |
+| `tsc`     | `*.{ts,tsx}`         | correctness (types)                   | `npx --no-install tsc` (needs `tsconfig.json`) | no       |
+
+Findings are filtered to lines the PR *actually added* — no comments
+on unchanged code — and any lint finding on a `(path, line)` the LLM
+already flagged is dropped so reviewers don't see duplicate noise.
+
+Toggle in `.ai-review.yml` or via env:
+
+```yaml
+enable_linters: true       # ruff + eslint
+enable_type_check: false   # mypy + tsc; opt-in because they're slower
+```
+
+## Coding-standards rules
+
+Structured, deterministic rules that scan added diff lines with regex
+and cost nothing at runtime. Unlike `prompt_extras_by_language`
+(free text appended to the system prompt), standards rules are exact,
+predictable, and don't consume tokens.
+
+```yaml
+# .ai-review.yml
+standards_rules:
+  - id: no-print-in-src
+    pattern: '^\s*print\('
+    languages: [python]
+    paths: ["src/**/*.py"]
+    severity: low
+    category: maintainability
+    message: Use logging instead of print()
+    explanation: |
+      print() bypasses configured log handlers and can't be silenced
+      in production. Use ``logging.getLogger(__name__)`` instead.
+
+  - id: no-any-in-public-ts
+    pattern: '\bany\b'
+    languages: [typescript]
+    paths: ["src/api/**/*.ts"]
+    severity: medium
+```
+
+Fields:
+- `id` (required-ish) — used in the comment title; defaults to `rule-N`.
+- `pattern` (required) — Python regex applied to each added line.
+- `languages` (optional) — filter by `language_for(path)` (`python`, `typescript`, ...).
+- `paths` (optional) — globstar-aware globs (`web/**/*.tsx` works).
+- `severity` — `critical | high | medium | low` (default `low`).
+- `category` — `correctness | security | performance | maintainability` (default `maintainability`).
+- `message` — short description used as the comment title.
+- `explanation` — long-form body (falls back to `message`).
+
+Malformed rules (bad regex, missing pattern, unknown severity) warn
+to stderr and are skipped; the rest of the rule set still runs.
+
+## Repository context awareness
+
+The single biggest thing separating a POC reviewer from a real senior
+reviewer is that the human has read the codebase. For each file in the
+diff, the reviewer now injects a **Related code** section into the
+prompt containing:
+
+- **Callers of newly-defined symbols** — `git grep` for each function
+  or class the PR adds. If `process_order` is new and `handlers.py`
+  calls it, the LLM sees `handlers.py:42` in context.
+- **One sibling file** — the top file in the same directory with the
+  same extension, first 40 lines. Gives the model a reference for
+  local conventions (does this project use `logger.info`, or `print`?
+  are files ES module or CommonJS?).
+
+Bounded by `max_context_files` (default 3) and `max_context_chars`
+(default 3000) so a big PR doesn't blow the prompt budget. Best-effort:
+failures (git not available, file unreadable, no matches) silently
+degrade to "no context" instead of failing the review.
+
+```yaml
+enable_repo_context: true       # default
+max_context_files: 3
+max_context_chars: 3000
+```
+
+Symbol extraction uses language-specific regex patterns for Python,
+TypeScript, JavaScript, Go, and Java. Unknown languages skip the caller
+search but still get a sibling-file snippet.
+
+## Test-quality review
+
+Test files (`tests/`, `__tests__/`, `*.test.ts`, `*.spec.py`, etc.) get
+a **specialised prompt** — instead of asking "is this code correct",
+we ask "are these tests any good". Findings include:
+
+- Tautological asserts (`assert x == x`).
+- Tests that would pass even if the function-under-test is deleted.
+- Missing edge cases: empty inputs, boundaries, error paths, unicode.
+- Over-mocking / asserts on `mock.call_count` without asserts on outcome.
+- Poorly-named tests (`test_1`, `test_it_works`).
+- Flakiness risks (`sleep` in a test not testing timing).
+- Assertion granularity (one giant equality on a huge dict).
+
+Toggle:
+
+```yaml
+enable_test_review: true        # default; off routes tests to the standard reviewer
+```
+
+## PR-level review (the senior-engineer pass)
+
+After the per-file review, the reviewer does one extra LLM call over
+the *whole* diff and flags concerns a line-by-line pass can't see:
+
+- **Missing tests** — new business logic / API surface / branches added
+  but no test files touched. Also runs deterministically without an
+  LLM call via the missing-tests heuristic.
+- **Missing docs** — new public API without docstring; documented
+  behaviour changed without doc updates.
+- **Breaking changes** — public function renamed/removed, required
+  argument added, error-type changed, config key removed.
+- **Scope creep** — PR title says "fix bug" but the diff also refactors
+  unrelated code or bumps a dep.
+- **Architectural smells** — layer boundaries crossed, circular
+  imports introduced, an abstraction added that duplicates a nearby one.
+- **Migration / deploy safety** — schema migration added without
+  backfill; feature flag removed while callers still reference it.
+- **Observability holes** — new failure path with no log/metric; a
+  metric renamed which breaks dashboards.
+
+These findings can't be posted inline (they don't correspond to a
+single line), so they render as a **PR-level review** section in the
+summary comment.
+
+Toggles:
+
+```yaml
+enable_pr_level_review: true      # LLM pass — one extra chunk-sized call
+enable_missing_tests_check: true  # deterministic — free, runs even without LLM
+```
+
+The deterministic missing-tests check skips docs-only, config-only,
+and test-only PRs, and won't nag on tiny (< 5 line) changes.
+
+## New-code coverage gate (Sonar-style)
+
+Point the reviewer at a coverage report and it will compute the % of
+lines the PR *added* that are exercised by tests. If it's below the
+threshold, a PR-level finding fires — severity scales with how far
+below (>20 points = high, 10–20 = medium, else low).
+
+```yaml
+enable_coverage_gate: true
+coverage_report_path: coverage.xml   # or path/to/lcov.info
+new_code_coverage_threshold: 0.8     # 80% of added lines must be covered
+```
+
+Formats supported:
+- **Cobertura XML** — Python (`pytest --cov --cov-report=xml`), Java
+  Jacoco (via `cover2cover`), JavaScript `nyc --reporter=cobertura`.
+- **LCOV** — Jest, ts-jest, most JS/TS toolchains.
+
+Handles path-mismatch quirks: a coverage report with absolute paths
+(`/home/runner/work/repo/src/a.py`) still matches diff paths
+(`src/a.py`) via suffix lookup.
+
+Docs-only, config-only, and lockfile-only changes are excluded from the
+gate — you can't "cover" a README.
+
+Your CI needs to write the coverage report *before* the reviewer step:
+
+```yaml
+- run: pytest --cov=src --cov-report=xml
+- run: python .ai-reviewer/scripts/review_pr.py    # picks up coverage.xml
+```
 
 ## Design notes
 

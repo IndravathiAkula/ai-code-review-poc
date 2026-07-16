@@ -66,6 +66,47 @@ class ReviewConfig:
     # already cover this cheaply; enable it for repos that don't run a
     # linter in PR CI.
     include_maintainability_findings: bool = False
+    # Deterministic tooling that runs alongside the LLM. Lint is on by
+    # default (ruff for .py, eslint via ``npx --no-install`` for JS/TS —
+    # both no-op when the tool or config isn't present). Type checking
+    # is opt-in because mypy/tsc walk broader graphs and can be slow.
+    enable_linters: bool = True
+    enable_type_check: bool = False
+    # Structured coding-standards rules. Each entry is a mapping with at
+    # least ``pattern`` (regex); see ``reviewer.standards`` for the full
+    # schema. Matches on ADDED diff lines produce PR comments with no
+    # model call.
+    standards_rules: list = field(default_factory=list)
+    # PR-level architectural review — one extra LLM call that looks at
+    # the whole diff and flags cross-file / structural concerns a
+    # per-file pass can't see (missing tests, breaking changes,
+    # architectural smells, scope creep). On by default because the
+    # cost is one extra chunk-sized call and the signal is high.
+    enable_pr_level_review: bool = True
+    # Deterministic "missing tests" heuristic that fires when a PR
+    # touches production code but not tests. Independent of the LLM
+    # PR-level pass so it works even when the model call is disabled.
+    enable_missing_tests_check: bool = True
+    # Repository context: retrieve callers of newly-defined symbols +
+    # one sibling file for style reference and inject into the per-file
+    # user prompt. Requires ``git`` on PATH (guaranteed in Actions).
+    enable_repo_context: bool = True
+    max_context_files: int = 3
+    max_context_chars: int = 3000
+    # Route test-file diffs to a specialized "review the tests, not the
+    # code under test" system prompt (tautological asserts, missing edge
+    # cases, over-mocking, etc.). Off routes tests through the normal
+    # reviewer prompt.
+    enable_test_review: bool = True
+    # Semgrep: multi-language SAST + best-practice rules. Opt-in because
+    # it's a bigger dep (~50MB) and needs network for --config auto.
+    enable_semgrep: bool = False
+    # New-code coverage gate: parse a coverage report and flag when the
+    # PR's added lines fall below the threshold. Off by default — needs
+    # CI to write the report file first.
+    enable_coverage_gate: bool = False
+    coverage_report_path: str = "coverage.xml"
+    new_code_coverage_threshold: float = 0.8
 
 
 _KNOWN_KEYS: set[str] = {f.name for f in fields(ReviewConfig)}
@@ -87,21 +128,46 @@ _ENV_OVERRIDES: dict[str, str] = {
     "max_tokens_per_pr": "REVIEWER_MAX_TOKENS_PER_PR",
     "skip_labels": "REVIEWER_SKIP_LABELS",
     "include_maintainability_findings": "REVIEWER_INCLUDE_MAINTAINABILITY",
+    "enable_linters": "REVIEWER_ENABLE_LINTERS",
+    "enable_type_check": "REVIEWER_ENABLE_TYPE_CHECK",
+    "enable_pr_level_review": "REVIEWER_ENABLE_PR_LEVEL_REVIEW",
+    "enable_missing_tests_check": "REVIEWER_ENABLE_MISSING_TESTS",
+    "enable_repo_context": "REVIEWER_ENABLE_REPO_CONTEXT",
+    "max_context_files": "REVIEWER_MAX_CONTEXT_FILES",
+    "max_context_chars": "REVIEWER_MAX_CONTEXT_CHARS",
+    "enable_test_review": "REVIEWER_ENABLE_TEST_REVIEW",
+    "enable_semgrep": "REVIEWER_ENABLE_SEMGREP",
+    "enable_coverage_gate": "REVIEWER_ENABLE_COVERAGE_GATE",
+    "coverage_report_path": "REVIEWER_COVERAGE_REPORT_PATH",
+    "new_code_coverage_threshold": "REVIEWER_NEW_CODE_COVERAGE_THRESHOLD",
 }
 
 
 def _coerce(name: str, value: Any) -> Any:
     """Best-effort type coercion. Strings from env need int/float/bool
     conversion; YAML usually arrives already typed."""
-    if name in {"min_confidence", "retry_base_seconds"}:
+    if name in {"min_confidence", "retry_base_seconds",
+                "new_code_coverage_threshold"}:
         return float(value)
     if name in {"concurrency", "max_diff_chars", "max_retries",
-                "max_files_per_pr", "max_tokens_per_pr"}:
+                "max_files_per_pr", "max_tokens_per_pr",
+                "max_context_files", "max_context_chars"}:
         return int(value)
-    if name in {"post_summary", "include_maintainability_findings"}:
+    if name in {"post_summary", "include_maintainability_findings",
+                "enable_linters", "enable_type_check",
+                "enable_pr_level_review", "enable_missing_tests_check",
+                "enable_repo_context", "enable_test_review",
+                "enable_semgrep", "enable_coverage_gate"}:
         if isinstance(value, bool):
             return value
         return str(value).strip().lower() in {"1", "true", "yes", "on"}
+    if name == "standards_rules":
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise TypeError(
+                f"standards_rules must be a list, got {type(value).__name__}")
+        return list(value)
     if name in {"block_patterns", "skip_labels"}:
         if isinstance(value, str):
             return tuple(p.strip() for p in value.split(",") if p.strip())

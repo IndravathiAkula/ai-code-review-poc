@@ -745,3 +745,45 @@ def test_findings_sorted_by_severity():
     ]))
     out = review_patch(SAMPLE_DIFF, model="x", client=client)
     assert [f["severity"] for f in out] == ["critical", "medium", "low"]
+
+
+# ---- test-file routing ---------------------------------------------------
+
+TEST_FILE_DIFF = """diff --git a/tests/test_thing.py b/tests/test_thing.py
+index 1111111..2222222 100644
+--- a/tests/test_thing.py
++++ b/tests/test_thing.py
+@@ -0,0 +1,3 @@
++def test_it():
++    x = 1
++    assert x == x
+"""
+
+
+def test_test_files_route_to_test_review_prompt():
+    """A file under ``tests/`` should be reviewed with TEST_REVIEW_SYSTEM."""
+    from reviewer.prompts import TEST_REVIEW_SYSTEM
+    client = FakeClient(_payload([]))
+    review_patch(TEST_FILE_DIFF, model="x", client=client)
+    assert len(client.calls) == 1
+    system_msg = client.calls[0]["messages"][0].content
+    # The specialised prompt has distinctive text we can match on.
+    assert "TEST FILE" in system_msg
+    assert system_msg == TEST_REVIEW_SYSTEM
+
+
+def test_prod_files_still_use_regular_prompt():
+    client = FakeClient(_payload([]))
+    review_patch(SAMPLE_DIFF, model="x", client=client)  # app/auth.py
+    system_msg = client.calls[0]["messages"][0].content
+    assert "TEST FILE" not in system_msg
+    # The regular prompt starts with "You are a staff software engineer"
+    assert "staff software engineer" in system_msg
+
+
+def test_enable_test_review_off_uses_regular_prompt_on_tests():
+    client = FakeClient(_payload([]))
+    review_patch(TEST_FILE_DIFF, model="x", client=client,
+                 enable_test_review=False)
+    system_msg = client.calls[0]["messages"][0].content
+    assert "TEST FILE" not in system_msg

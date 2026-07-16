@@ -12,14 +12,22 @@ from dotenv import load_dotenv
 
 from reviewer import review_patch
 from reviewer.config import effective_config, load_config
+from reviewer.coverage import (
+    coverage_gate_finding, load_coverage, new_code_coverage,
+)
 from reviewer.github_poster import (
     fetch_pr_diff, fetch_pr_labels, post_findings, upsert_summary_comment,
 )
+from reviewer.linters import run_all as run_all_linters
+from reviewer.pr_review import review_pr_level
 from reviewer.providers import build_provider
 from reviewer.reporting import (
     render_markdown, summarize_run, write_artifact, write_step_summary,
 )
-from reviewer.utils import find_skip_label
+from reviewer.standards import apply_rules, load_rules
+from reviewer.utils import (
+    dedupe, filter_by_severity, find_skip_label, sort_findings,
+)
 
 
 def _require(name: str) -> str:
@@ -91,9 +99,117 @@ def main() -> int:
         max_tokens_per_pr=cfg.max_tokens_per_pr,
         provider=provider,
         usage_log=usage_log,
+        repo_root=str(workspace),
+        enable_repo_context=cfg.enable_repo_context,
+        max_context_files=cfg.max_context_files,
+        max_context_chars=cfg.max_context_chars,
+        enable_test_review=cfg.enable_test_review,
     )
     wall = time.perf_counter() - t0
-    print(f"[info] {len(findings)} finding(s) passed filters in {wall:.2f}s")
+    print(f"[info] {len(findings)} AI finding(s) passed filters in {wall:.2f}s")
+
+    # Deterministic tooling: linters, type-checkers, and standards rules.
+    # These run on the checked-out working tree (GITHUB_WORKSPACE) and
+    # only surface findings on lines the PR actually added. The extra
+    # findings share the LLM's schema so they flow through the same
+    # dedupe / severity-filter / post pipeline.
+    det_findings: list[dict] = []
+    if cfg.enable_linters or cfg.enable_type_check or cfg.enable_semgrep:
+        det_findings += run_all_linters(
+            diff, workspace,
+            enable_lint=cfg.enable_linters,
+            enable_type_check=cfg.enable_type_check,
+            enable_semgrep=cfg.enable_semgrep,
+        )
+    if cfg.standards_rules:
+        det_findings += apply_rules(diff, load_rules(cfg.standards_rules))
+    if det_findings:
+        print(f"[info] {len(det_findings)} deterministic finding(s) "
+              f"from linters / type-checkers / standards")
+        # LLM finding wins when both hit the same (path, line): the
+        # model's explanation is usually richer. dedupe() keys on
+        # (path, line, title) — different titles from the same line are
+        # kept, so lint noise on a line the LLM already flagged only
+        # gets suppressed if the titles happen to collide. To also
+        # suppress lint on any line the LLM already flagged, drop them
+        # here before merging.
+        ai_anchors = {(f["path"], int(f["line"])) for f in findings
+                      if f.get("source", "ai") == "ai"}
+        det_findings = [
+            f for f in det_findings
+            if (f["path"], int(f["line"])) not in ai_anchors
+        ]
+        merged = dedupe(findings + det_findings)
+        merged = filter_by_severity(merged, cfg.min_severity)
+        findings = sort_findings(merged)
+        print(f"[info] {len(findings)} total finding(s) after merge")
+
+    # PR-level architectural review — the "senior engineer stepping back"
+    # pass. Findings from here have ``line: 0`` and are rendered in the
+    # summary comment, not as inline comments.
+    pr_level_findings: list[dict] = []
+    if cfg.enable_pr_level_review or cfg.enable_missing_tests_check:
+        try:
+            pr_level_findings = review_pr_level(
+                diff,
+                provider=provider,
+                model=cfg.model,
+                pr_title=title,
+                pr_description=body,
+                repo=repo_full,
+                max_retries=cfg.max_retries,
+                retry_base_seconds=cfg.retry_base_seconds,
+                usage_log=usage_log,
+                enable_missing_tests=cfg.enable_missing_tests_check,
+            ) if cfg.enable_pr_level_review else []
+            if not cfg.enable_pr_level_review and cfg.enable_missing_tests_check:
+                # Deterministic check only — no LLM call.
+                from reviewer.pr_review import build_summary, missing_tests_finding
+                mt = missing_tests_finding(build_summary(diff))
+                if mt is not None:
+                    pr_level_findings = [mt]
+        except Exception as exc:
+            print(f"[warn] PR-level review skipped: {exc}", file=sys.stderr)
+        # Filter PR-level findings by confidence/severity same as
+        # inline. They don't go through dedupe (different keying) but
+        # the LLM shouldn't repeat itself.
+        pr_level_findings = [
+            f for f in pr_level_findings
+            if float(f.get("confidence", 0.0)) >= cfg.min_confidence
+        ]
+        pr_level_findings = filter_by_severity(
+            pr_level_findings, cfg.min_severity)
+        pr_level_findings = sort_findings(pr_level_findings)
+        if pr_level_findings:
+            print(f"[info] {len(pr_level_findings)} PR-level finding(s)")
+
+    # Coverage-diff gate. Runs after the LLM/pr_level pipeline so its
+    # finding sits alongside the others in the summary comment. Reads a
+    # coverage report the target repo's CI is expected to have written
+    # earlier in the workflow.
+    if cfg.enable_coverage_gate:
+        cov_path = workspace / cfg.coverage_report_path
+        report = load_coverage(cov_path)
+        if report is None:
+            print(f"[warn] coverage gate: report not found or unparseable "
+                  f"at {cov_path}; skipping gate", file=sys.stderr)
+        else:
+            ncc = new_code_coverage(diff, report)
+            gate = coverage_gate_finding(ncc, cfg.new_code_coverage_threshold)
+            if gate is not None:
+                pr_level_findings.append(gate)
+                print(
+                    f"[info] coverage gate: {ncc.covered}/"
+                    f"{ncc.total_instrumented} new lines covered "
+                    f"({ncc.ratio:.0%}) — below threshold "
+                    f"{cfg.new_code_coverage_threshold:.0%}"
+                )
+            else:
+                print(
+                    f"[info] coverage gate passed: {ncc.covered}/"
+                    f"{ncc.total_instrumented} new lines covered "
+                    f"({ncc.ratio:.0%})"
+                )
 
     if findings:
         report = post_findings(
@@ -115,6 +231,7 @@ def main() -> int:
         model=cfg.model, repo=repo_full, pr_number=pr_number,
         findings=findings, post_report=report, usage_log=usage_log,
         wall_seconds=wall,
+        pr_level_findings=pr_level_findings,
     )
     md = render_markdown(summary)
 

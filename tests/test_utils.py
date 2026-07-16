@@ -192,5 +192,32 @@ def test_format_comment_has_tag_and_fix():
     }
     body = format_comment(f)
     assert AI_COMMENT_TAG in body
+    assert "[AI]" in body        # default source label
     assert "Suggested fix" in body
     assert "use params" in body
+
+
+def test_format_comment_tags_lint_findings():
+    f = {
+        "severity": "low", "category": "maintainability", "title": "F401: unused",
+        "explanation": "unused import", "confidence": 0.99,
+        "source": "lint", "tool": "ruff",
+    }
+    body = format_comment(f)
+    assert "[LINT]" in body
+    assert "ruff" in body
+
+
+def test_format_comment_tags_type_findings():
+    f = {"severity": "medium", "category": "correctness", "title": "type err",
+         "explanation": "bad type", "confidence": 0.9,
+         "source": "type", "tool": "mypy"}
+    assert "[TYPE]" in format_comment(f)
+
+
+def test_format_comment_tags_standards_findings():
+    f = {"severity": "low", "category": "maintainability",
+         "title": "no-print: use logging", "explanation": "…",
+         "confidence": 1.0, "source": "standards", "tool": "standards/no-print"}
+    body = format_comment(f)
+    assert "[STANDARDS]" in body

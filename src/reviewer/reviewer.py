@@ -12,7 +12,10 @@ from unidiff import PatchSet
 from azure.core.exceptions import HttpResponseError, ServiceRequestError
 
 from .pricing import cost_usd
-from .prompts import SYSTEM, USER_TEMPLATE, build_system_prompt
+from .prompts import (
+    SYSTEM, TEST_REVIEW_SYSTEM, USER_TEMPLATE, build_system_prompt,
+)
+from .repo_context import gather_context
 from typing import Callable, Iterator
 
 from .providers import (
@@ -22,7 +25,7 @@ from .providers import (
 from .utils import (
     language_for, should_skip, valid_new_lines,
     dedupe, filter_by_confidence, filter_by_severity, sort_findings,
-    is_sensitive_path,
+    is_sensitive_path, is_test_path,
 )
 
 
@@ -275,6 +278,11 @@ def _review_chunk(
     prompt_extras_by_language: dict[str, str] | None = None,
     include_maintainability_findings: bool = False,
     stream_callback: Callable[[str, str], None] | None = None,
+    repo_root: str | None = None,
+    full_diff_text: str = "",
+    max_context_files: int = 3,
+    max_context_chars: int = 3000,
+    enable_test_review: bool = True,
 ) -> list[dict]:
     # Cost cap: if a prior chunk pushed the running total past the cap,
     # skip this chunk entirely. The first chunk that trips it logs the
@@ -283,23 +291,51 @@ def _review_chunk(
         return []
     # Per-task override (e.g. models_by_language) wins over the run-wide model.
     model = task_model or model
+
+    # Repo-context injection: retrieve callers of newly-defined symbols
+    # and one sibling file for style reference. Bounded by
+    # max_context_files/max_context_chars so it doesn't blow the prompt
+    # budget on a big PR. Best-effort — gather_context swallows errors
+    # and returns "" if git grep isn't available.
+    related = ""
+    if repo_root and full_diff_text:
+        block = gather_context(
+            full_diff_text, path, repo_root,
+            max_files=max_context_files, max_chars=max_context_chars,
+        )
+        if block:
+            related = (
+                "\n\nRelated code in the same repository (for context "
+                "on callers and conventions — not part of the diff):\n"
+                f"{block}\n"
+            )
+
     user = USER_TEMPLATE.format(
         repo=repo,
         path=path,
         lang=lang,
         title=pr_title or "(no title)",
         description=pr_description or "(no description)",
+        related_code_section=related,
         diff=hunks_text,
     )
+
+    # Test files get a specialized "review the tests, not the code under
+    # test" prompt when enable_test_review is on. Falls back to the
+    # standard reviewer prompt otherwise (still useful for catching
+    # syntax bugs in test code).
+    if enable_test_review and is_test_path(path):
+        system_content = TEST_REVIEW_SYSTEM
+    else:
+        system_content = build_system_prompt(
+            lang, prompt_extras_by_language,
+            include_maintainability=include_maintainability_findings,
+        )
 
     call_kwargs = dict(
         model=model,
         messages=[
-            {"role": "system",
-             "content": build_system_prompt(
-                 lang, prompt_extras_by_language,
-                 include_maintainability=include_maintainability_findings,
-             )},
+            {"role": "system", "content": system_content},
             {"role": "user", "content": user},
         ],
         temperature=0.2,
@@ -421,6 +457,11 @@ def review_patch(
     max_files_per_pr: int | None = None,
     max_tokens_per_pr: int | None = None,
     stream_callback: Callable[[str, str], None] | None = None,
+    repo_root: str | None = None,
+    enable_repo_context: bool = False,
+    max_context_files: int = 3,
+    max_context_chars: int = 3000,
+    enable_test_review: bool = True,
 ) -> list[dict]:
     """Review a unified diff and return a list of findings (dicts).
 
@@ -526,6 +567,11 @@ def review_patch(
         prompt_extras_by_language=prompt_extras_by_language,
         include_maintainability_findings=include_maintainability_findings,
         stream_callback=stream_callback,
+        repo_root=(repo_root if enable_repo_context else None),
+        full_diff_text=(diff_text if enable_repo_context else ""),
+        max_context_files=max_context_files,
+        max_context_chars=max_context_chars,
+        enable_test_review=enable_test_review,
     )
     workers = max(1, min(concurrency, len(tasks)))
 

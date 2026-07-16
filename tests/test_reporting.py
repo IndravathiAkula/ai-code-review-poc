@@ -210,6 +210,59 @@ def test_render_markdown_omits_cache_line_when_no_caching():
     assert "Cache:" not in render_markdown(s)
 
 
+def test_summarize_run_stores_pr_level_findings():
+    plf = [
+        {"path": "(pull request)", "line": 0, "severity": "medium",
+         "category": "maintainability",
+         "title": "Missing tests", "explanation": "no test files touched",
+         "confidence": 0.9, "source": "pr_review"},
+    ]
+    s = summarize_run(
+        model="x", repo="o/r", pr_number=7,
+        findings=[], post_report={},
+        usage_log=[], wall_seconds=0.1,
+        pr_level_findings=plf,
+    )
+    assert s.pr_level_findings == plf
+
+
+def test_render_markdown_includes_pr_level_section():
+    s = RunSummary(
+        model="x", repo="o/r", pr_number=7,
+        posted=0, kept=0, skipped=0, removed_stale=0,
+        severity_counts={}, total_calls=0,
+        prompt_tokens=0, completion_tokens=0, total_tokens=0,
+        cost_usd=None, wall_seconds=0.0,
+        pr_level_findings=[{
+            "path": "svc/x.py", "line": 0, "severity": "high",
+            "category": "maintainability",
+            "title": "Breaking change: process_order removed",
+            "explanation": "Callers in web/orders.tsx still reference it.",
+            "confidence": 0.9, "source": "pr_review",
+        }],
+    )
+    md = render_markdown(s)
+    assert "### PR-level review" in md
+    assert "Breaking change" in md
+    assert "process_order removed" in md
+    assert "HIGH / maintainability" in md
+    # PR-level count shown in the metric table
+    assert "| PR-level findings | 1 |" in md
+
+
+def test_render_markdown_omits_pr_level_section_when_none():
+    s = RunSummary(
+        model="x", repo="o/r", pr_number=1,
+        posted=0, kept=0, skipped=0, removed_stale=0,
+        severity_counts={}, total_calls=0,
+        prompt_tokens=0, completion_tokens=0, total_tokens=0,
+        cost_usd=None, wall_seconds=0.0,
+    )
+    md = render_markdown(s)
+    assert "### PR-level review" not in md
+    assert "| PR-level findings | 0 |" in md
+
+
 def test_write_artifact_writes_summary_and_usage_log_as_json(tmp_path):
     s = RunSummary(
         model="x", repo="o/r", pr_number=1,
