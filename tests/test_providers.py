@@ -463,3 +463,79 @@ def test_anthropic_provider_rejects_multiple_system_messages():
             ],
             temperature=0.0,
         )
+
+
+def test_anthropic_provider_handles_sdk_v1_extra_body():
+    """In Anthropic SDK >= 1.0.0, Messages.create() does not accept
+    temperature as a direct kwarg. AnthropicProvider should pass it via
+    extra_body instead of raising TypeError."""
+    class _FakeV1Messages:
+        def __init__(self):
+            self.calls = []
+
+        def create(self, *, model, messages, max_tokens, system=None, extra_body=None):
+            self.calls.append({
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "system": system,
+                "extra_body": extra_body,
+            })
+            return _FakeAnthropicMessage("ok", usage=_FakeAnthropicUsage(5, 2))
+
+    class _FakeV1Client:
+        def __init__(self):
+            self.messages = _FakeV1Messages()
+
+    client = _FakeV1Client()
+    p = AnthropicProvider(api_key="sk-test", client=client)
+    res = p.complete(
+        model="claude-sonnet-4-6",
+        messages=[{"role": "user", "content": "hello"}],
+        temperature=0.2,
+    )
+    assert res.content == "ok"
+    assert len(client.messages.calls) == 1
+    assert client.messages.calls[0]["extra_body"] == {"temperature": 0.2}
+
+
+def test_anthropic_provider_stream_handles_sdk_v1_extra_body():
+    class _FakeStreamCtx:
+        def __init__(self):
+            self.text_stream = ["hello", " world"]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    class _FakeV1MessagesStream:
+        def __init__(self):
+            self.calls = []
+
+        def stream(self, *, model, messages, max_tokens, system=None, extra_body=None):
+            self.calls.append({
+                "model": model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "system": system,
+                "extra_body": extra_body,
+            })
+            return _FakeStreamCtx()
+
+    class _FakeV1Client:
+        def __init__(self):
+            self.messages = _FakeV1MessagesStream()
+
+    client = _FakeV1Client()
+    p = AnthropicProvider(api_key="sk-test", client=client)
+    chunks = list(p.complete_stream(
+        model="claude-sonnet-4-6",
+        messages=[{"role": "user", "content": "hello"}],
+        temperature=0.2,
+    ))
+    assert "".join(chunks) == "hello world"
+    assert len(client.messages.calls) == 1
+    assert client.messages.calls[0]["extra_body"] == {"temperature": 0.2}
+

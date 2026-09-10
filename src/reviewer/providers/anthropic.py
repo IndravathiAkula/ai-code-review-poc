@@ -19,15 +19,39 @@ Translation notes for the Provider abstraction:
 
 from __future__ import annotations
 
-import sys
+import inspect
 from typing import Any, Iterator
 
 from .base import (
-    ChatResponse, Provider, ProviderPermanentError, ProviderTransientError, Usage,
+    ChatResponse, ProviderPermanentError, ProviderTransientError, Usage,
 )
 
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 _DEFAULT_MAX_TOKENS = 4096
+
+def _set_temperature(method: Any, kwargs: dict[str, Any], temperature: float) -> None:
+    """Pass temperature in a way compatible across Anthropic SDK versions.
+
+    In Anthropic Python SDK < 1.0.0, ``temperature`` is a direct parameter on
+    ``messages.create()`` / ``messages.stream()``.
+    In SDK >= 1.0.0, top-level ``temperature`` was removed from the typed
+    method signature, so additional body parameters must be passed via
+    ``extra_body``.
+    """
+    if method is not None:
+        try:
+            sig = inspect.signature(method)
+            params = sig.parameters
+            has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+            if "temperature" in params or has_var_kw:
+                kwargs["temperature"] = temperature
+                return
+        except (ValueError, TypeError):
+            pass
+
+    extra_body = dict(kwargs.get("extra_body") or {})
+    extra_body["temperature"] = temperature
+    kwargs["extra_body"] = extra_body
 
 def _extract_system_and_messages(messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
     """Pull the first system message out into its own slot."""
@@ -72,8 +96,12 @@ class AnthropicProvider:
             "model": model,
             "max_tokens": self._max_tokens,
             "messages": user_messages,
-            "temperature": temperature,
         }
+        _set_temperature(
+            getattr(getattr(self._client, "messages", None), "create", None),
+            kwargs,
+            temperature,
+        )
         if system_text is not None:
             if self._cache:
                 kwargs["system"] = [{
@@ -100,8 +128,12 @@ class AnthropicProvider:
             "model": model,
             "max_tokens": self._max_tokens,
             "messages": user_messages,
-            "temperature": temperature,
         }
+        _set_temperature(
+            getattr(getattr(self._client, "messages", None), "stream", None),
+            kwargs,
+            temperature,
+        )
         if system_text is not None:
             if self._cache:
                 kwargs["system"] = [{
