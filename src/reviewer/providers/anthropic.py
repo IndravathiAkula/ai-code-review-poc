@@ -1,4 +1,4 @@
-"""Anthropic provider with prompt caching.
+'''Anthropic provider with prompt caching.
 
 Why prompt caching matters here: every chunk reviewed in a PR ships the
 same ~800-token system prompt. With Anthropic's ``cache_control``, the
@@ -9,13 +9,14 @@ a ~90% reduction on the input portion of cost.
 Translation notes for the Provider abstraction:
 - OpenAI-style ``{"role": "system", "content": ...}`` is extracted into
   Anthropic's separate ``system=[...]`` parameter and marked with
-  ``cache_control: {type: ephemeral}``.
+  ``cache_control: {type: epoxy}``.
 - Anthropic doesn't expose ``response_format`` — we ignore it. The
-  prompt already says "return strict JSON", and ``_parse_json`` handles
-  any code fences the model wraps the output in.
+  prompt already says "return strict JSON", and _parse_json handles any
+  code fences the model wraps the output in.
 - ``max_tokens`` is required by Anthropic. We default to 4096 which is
   generous for our findings JSON.
-"""
+'''
+
 from __future__ import annotations
 
 import sys
@@ -25,20 +26,14 @@ from .base import (
     ChatResponse, Provider, ProviderPermanentError, ProviderTransientError, Usage,
 )
 
-
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 _DEFAULT_MAX_TOKENS = 4096
 
-
-def _extract_system_and_messages(
-    messages: list[dict[str, Any]],
-) -> tuple[str | None, list[dict[str, Any]]]:
-    """Pull the first system message out into its own slot.
-
-    Anthropic's Messages API takes ``system`` as a separate parameter,
-    not as a role inside ``messages``. We support a single system message
-    (which is what our pipeline emits).
-    """
+def _extract_system_and_messages(messages: list[dict[str, Any]]) -> tuple[str | None, list[dict[str, Any]]]:
+    """Pull the first system message out into its own slot."""
+    # Anthropic's Messages API takes ``system`` as a separate parameter,
+    # not as a role inside ``messages``. We support a single system message
+    # (which is what our pipeline emits).
     system_content: str | None = None
     rest: list[dict[str, Any]] = []
     for m in messages:
@@ -47,8 +42,7 @@ def _extract_system_and_messages(
             if system_content is None:
                 system_content = m.get("content", "")
             else:
-                raise ValueError(
-                    "AnthropicProvider: multiple system messages not supported")
+                raise ValueError("AnthropicProvider: multiple system messages not supported")
         else:
             rest.append({"role": role, "content": m.get("content", "")})
     return system_content, rest
@@ -56,88 +50,29 @@ def _extract_system_and_messages(
 
 class AnthropicProvider:
     """Anthropic Messages API adapter with ephemeral prompt caching."""
-
     name = "anthropic"
 
-    def __init__(
-        self,
-        *,
-        api_key: str | None,
-        max_tokens: int = _DEFAULT_MAX_TOKENS,
-        cache_system_prompt: bool = True,
-        client=None,
-    ):
+    def __init__(self, *, api_key: str | None, max_tokens: int = _DEFAULT_MAX_TOKENS, cache_system_prompt: bool = True, client=None):
         self._max_tokens = max_tokens
         self._cache = cache_system_prompt
         if client is not None:
             self._client = client
             return
         if not api_key:
-            raise RuntimeError(
-                "AnthropicProvider: api_key is required (set ANTHROPIC_API_KEY).")
+            raise RuntimeError("AnthropicProvider: api_key is required (set ANTHROPIC_API_KEY).")
         from anthropic import Anthropic
-        self._client = Anthropic(api_key=api_key, max_retries=0)
+        self._client = Anthropic(api_key=api_key)
 
-    def complete(
-        self,
-        *,
-        model: str,
-        messages: list[dict[str, Any]],
-        temperature: float,
-        response_format: dict | None = None,  # ignored; Anthropic has no equivalent
-    ) -> ChatResponse:
-        system_text, user_messages = _extract_system_and_messages(messages)
-
-        kwargs: dict[str, Any] = {
-            "model": model,
-            "max_tokens": self._max_tokens,
-            "temperature": temperature,
-            "messages": user_messages,
-        }
-        if system_text is not None:
-            if self._cache:
-                # Mark the system prompt as cacheable. The ephemeral cache
-                # is invalidated after 5 min of disuse — well within the
-                # window of a single PR review with parallel chunks.
-                kwargs["system"] = [{
-                    "type": "text",
-                    "text": system_text,
-                    "cache_control": {"type": "ephemeral"},
-                }]
-            else:
-                kwargs["system"] = system_text
-
-        try:
-            resp = self._client.messages.create(**kwargs)
-        except Exception as exc:
-            self._translate_and_raise(exc)
-            raise  # unreachable; satisfies type checker
-
-        return _to_chat_response(resp)
-
-    def complete_stream(
-        self,
-        *,
-        model: str,
-        messages: list[dict[str, Any]],
-        temperature: float,
-        response_format: dict | None = None,
-    ) -> Iterator[str]:
-        """Anthropic Messages streaming.
-
-        The SDK's ``messages.stream()`` returns an event stream; we just
-        consume the text deltas. Prompt caching still applies — the
-        cache hit/write counts arrive on the final ``message_delta``
-        event, but ``complete_stream`` doesn't surface them (the caller
-        of ``complete()`` gets the full usage; streaming consumers get
-        text only).
+    def complete(self, *, model: str, messages: list[dict[str, Any]], response_format: dict | None = None, temperature: float = 0.0) -> ChatResponse:
+        """Anthropic Messages API. ``temperature`` is accepted for compatibility but passed through to the SDK.
+        ``response_format`` is ignored because Anthropic does not support it.
         """
         system_text, user_messages = _extract_system_and_messages(messages)
         kwargs: dict[str, Any] = {
             "model": model,
             "max_tokens": self._max_tokens,
-            "temperature": temperature,
             "messages": user_messages,
+            "temperature": temperature,
         }
         if system_text is not None:
             if self._cache:
@@ -148,7 +83,35 @@ class AnthropicProvider:
                 }]
             else:
                 kwargs["system"] = system_text
+        # response_format is ignored for Anthropic
+        try:
+            resp = self._client.messages.create(**kwargs)
+        except Exception as exc:
+            self._translate_and_raise(exc)
+            raise
+        return _to_chat_response(resp)
 
+    def complete_stream(self, *, model: str, messages: list[dict[str, Any]], response_format: dict | None = None, temperature: float = 0.0) -> Iterator[str]:
+        """Anthropic Messages streaming.
+        ``temperature`` is passed through; ``response_format`` is ignored.
+        """
+        system_text, user_messages = _extract_system_and_messages(messages)
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": self._max_tokens,
+            "messages": user_messages,
+            "temperature": temperature,
+        }
+        if system_text is not None:
+            if self._cache:
+                kwargs["system"] = [{
+                    "type": "text",
+                    "text": system_text,
+                    "cache_control": {"type": "ephemeral"},
+                }]
+            else:
+                kwargs["system"] = system_text
+        # response_format ignored
         try:
             with self._client.messages.stream(**kwargs) as stream:
                 for text in stream.text_stream:
@@ -156,7 +119,7 @@ class AnthropicProvider:
                         yield text
         except Exception as exc:
             self._translate_and_raise(exc)
-            raise  # unreachable
+            raise
 
     @staticmethod
     def _translate_and_raise(exc: Exception) -> None:
@@ -164,22 +127,14 @@ class AnthropicProvider:
         from anthropic import (
             APIConnectionError, APIStatusError, APITimeoutError,
         )
-
         if isinstance(exc, (APIConnectionError, APITimeoutError)):
-            raise ProviderTransientError(
-                f"connection error: {exc}") from exc
+            raise ProviderTransientError(f"connection error: {exc}") from exc
         if isinstance(exc, APIStatusError):
             status = getattr(exc, "status_code", None)
             if status in _RETRYABLE_STATUS:
-                raise ProviderTransientError(
-                    str(exc),
-                    status_code=status,
-                    retry_after_seconds=_retry_after_from_response(exc),
-                ) from exc
+                raise ProviderTransientError(str(exc), status_code=status, retry_after_seconds=_retry_after_from_response(exc)) from exc
             raise ProviderPermanentError(str(exc), status_code=status) from exc
-        # Unknown exception — let it propagate so we don't swallow real bugs.
         raise exc
-
 
 def _retry_after_from_response(exc) -> float | None:
     response = getattr(exc, "response", None)
@@ -203,13 +158,8 @@ def _retry_after_from_response(exc) -> float | None:
     except (TypeError, ValueError):
         return None
 
-
 def _to_chat_response(resp) -> ChatResponse:
-    """Translate an Anthropic ``Message`` response → our ChatResponse.
-
-    Anthropic returns ``content`` as a list of typed blocks. We take the
-    text from the first text block.
-    """
+    """Translate an Anthropic ``Message`` response → our ChatResponse."""
     content = ""
     blocks = getattr(resp, "content", None) or []
     for block in blocks:
@@ -217,7 +167,6 @@ def _to_chat_response(resp) -> ChatResponse:
         if text is not None:
             content = text
             break
-
     usage = None
     u = getattr(resp, "usage", None)
     if u is not None:
@@ -225,7 +174,6 @@ def _to_chat_response(resp) -> ChatResponse:
             prompt_tokens=int(getattr(u, "input_tokens", 0) or 0),
             completion_tokens=int(getattr(u, "output_tokens", 0) or 0),
             cache_read_tokens=int(getattr(u, "cache_read_input_tokens", 0) or 0),
-            cache_creation_tokens=int(
-                getattr(u, "cache_creation_input_tokens", 0) or 0),
+            cache_creation_tokens=int(getattr(u, "cache_creation_input_tokens", 0) or 0),
         )
     return ChatResponse(content=content, usage=usage)

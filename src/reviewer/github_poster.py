@@ -205,9 +205,66 @@ def fetch_pr_labels(token: str, repo_full_name: str, pr_number: int) -> list[str
     return [label.name for label in pr.labels]
 
 
+def _collect_large_pr_diff(pr) -> str:
+    """Collect the complete diff when GitHub's unified diff endpoint returns 406 (diff too large).
+
+    1. First tries local git diff between base and head (instant, captures 100% of changes without size limits).
+    2. Fallback to paginating changed files via GitHub API (pr.get_files()).
+    """
+    import subprocess
+    import sys
+
+    # 1. Try local git diff in the runner/workspace
+    try:
+        base_sha = getattr(getattr(pr, "base", None), "sha", None)
+        head_sha = getattr(getattr(pr, "head", None), "sha", None)
+        base_ref = getattr(getattr(pr, "base", None), "ref", None)
+
+        cmd = None
+        if base_sha and head_sha:
+            cmd = ["git", "diff", f"{base_sha}...{head_sha}"]
+        elif base_ref:
+            cmd = ["git", "diff", f"origin/{base_ref}...HEAD"]
+
+        if cmd:
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=60,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                print(
+                    f"[info] Retrieved full diff for PR #{pr.number} via local git diff ({len(res.stdout)} chars)",
+                    file=sys.stderr,
+                )
+                return res.stdout
+    except Exception as exc:
+        print(f"[debug] local git diff fallback failed: {exc}", file=sys.stderr)
+
+    # 2. Paginate through changed files via GitHub API
+    print(
+        f"[info] Reconstructing diff for PR #{pr.number} file-by-file via GitHub API...",
+        file=sys.stderr,
+    )
+    diff_chunks: list[str] = []
+    for f in pr.get_files():
+        patch = getattr(f, "patch", None)
+        if patch:
+            diff_chunks.append(
+                f"diff --git a/{f.filename} b/{f.filename}\n"
+                f"--- a/{f.filename}\n"
+                f"+++ b/{f.filename}\n"
+                f"{patch}\n"
+            )
+    return "".join(diff_chunks)
+
+
 def fetch_pr_diff(token: str, repo_full_name: str, pr_number: int) -> tuple[str, str, str]:
     """Return (diff_text, title, body) for a PR."""
     import requests
+    import sys
     gh = Github(token)
     repo = gh.get_repo(repo_full_name)
     pr = repo.get_pull(pr_number)
@@ -216,5 +273,14 @@ def fetch_pr_diff(token: str, repo_full_name: str, pr_number: int) -> tuple[str,
         "Accept": "application/vnd.github.v3.diff",
     }
     r = requests.get(pr.url, headers=headers, timeout=30)
+    if r.status_code == 406:
+        print(
+            f"[warn] GitHub API returned 406 Not Acceptable (diff exceeds 20,000 lines). "
+            f"Splitting and collecting diff...",
+            file=sys.stderr,
+        )
+        diff_text = _collect_large_pr_diff(pr)
+        return diff_text, pr.title or "", pr.body or ""
     r.raise_for_status()
     return r.text, pr.title or "", pr.body or ""
+

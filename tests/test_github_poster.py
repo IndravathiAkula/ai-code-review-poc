@@ -117,3 +117,104 @@ def test_partition_mixed():
     assert len(stale) == 1
     assert stale[0].path == "c.py"
     assert kept == 1
+
+
+def test_collect_large_pr_diff_local_git(monkeypatch):
+    from reviewer.github_poster import _collect_large_pr_diff
+    import subprocess
+
+    class DummySha:
+        sha = "abc1234"
+        ref = "main"
+
+    class DummyPR:
+        number = 1381
+        base = DummySha()
+        head = DummySha()
+
+    def fake_run(cmd, **kwargs):
+        class DummyResult:
+            returncode = 0
+            stdout = "diff --git a/foo.py b/foo.py\n+print('hello')\n"
+        return DummyResult()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    diff = _collect_large_pr_diff(DummyPR())
+    assert "diff --git a/foo.py b/foo.py" in diff
+    assert "+print('hello')" in diff
+
+
+def test_collect_large_pr_diff_get_files_fallback(monkeypatch):
+    from reviewer.github_poster import _collect_large_pr_diff
+    import subprocess
+
+    class DummyFile:
+        def __init__(self, filename, patch):
+            self.filename = filename
+            self.patch = patch
+
+    class DummyPR:
+        number = 1381
+        base = None
+        head = None
+
+        def get_files(self):
+            return [
+                DummyFile("service.py", "@@ -1 +1 @@\n-old\n+new"),
+                DummyFile("binary.png", None),  # no patch, skipped
+            ]
+
+    # Force git run to fail or not return output
+    def fake_run(cmd, **kwargs):
+        class DummyResult:
+            returncode = 1
+            stdout = ""
+        return DummyResult()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    diff = _collect_large_pr_diff(DummyPR())
+    assert "diff --git a/service.py b/service.py" in diff
+    assert "+new" in diff
+    assert "binary.png" not in diff
+
+
+def test_fetch_pr_diff_handles_406(monkeypatch):
+    from reviewer.github_poster import fetch_pr_diff
+    import requests
+
+    class DummyResponse:
+        status_code = 406
+        text = ""
+
+        def raise_for_status(self):
+            raise requests.exceptions.HTTPError("406 Client Error: Not Acceptable")
+
+    class DummyPR:
+        number = 1381
+        url = "https://api.github.com/repos/test/repo/pulls/1381"
+        title = "Scrum 2418 insurance dashboard"
+        body = "PR description"
+
+    class DummyRepo:
+        def get_pull(self, num):
+            return DummyPR()
+
+    class DummyGithub:
+        def __init__(self, token):
+            pass
+
+        def get_repo(self, name):
+            return DummyRepo()
+
+    monkeypatch.setattr("reviewer.github_poster.Github", DummyGithub)
+    monkeypatch.setattr(requests, "get", lambda url, **kwargs: DummyResponse())
+    monkeypatch.setattr(
+        "reviewer.github_poster._collect_large_pr_diff",
+        lambda pr: "diff --git a/main.py b/main.py\n+fixed\n"
+    )
+
+    diff, title, body = fetch_pr_diff("fake_token", "test/repo", 1381)
+    assert "diff --git a/main.py b/main.py" in diff
+    assert title == "Scrum 2418 insurance dashboard"
+    assert body == "PR description"
+

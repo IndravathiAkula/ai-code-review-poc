@@ -47,3 +47,37 @@ def test_build_system_prompt_preserves_base_intact():
     before = SYSTEM
     build_system_prompt("python", {"python": "- foo"})
     assert SYSTEM == before
+
+
+def test_prompts_contain_business_requirement_intent_rules():
+    from reviewer.prompts import SYSTEM, USER_TEMPLATE, PR_LEVEL_SYSTEM
+
+    # SYSTEM prompt must instruct model to respect requirements and avoid subjective debates
+    assert "RESPECT BUSINESS REQUIREMENTS & INTENT" in SYSTEM
+    assert "cron expressions" in SYSTEM
+    assert "DISTINGUISH DEFECTS FROM SUBJECTIVE OPINIONS" in SYSTEM
+
+    # USER_TEMPLATE must contain explicit rules regarding schedules, datatypes, and intentionality
+    assert "Assume intentionality for requirements" in USER_TEMPLATE
+    assert "invalid cron expression syntax" in USER_TEMPLATE
+    assert "ai-review-ignore" in USER_TEMPLATE
+
+    # PR_LEVEL_SYSTEM must instruct not to critique intentional requirements
+    assert "Do NOT critique intentional business requirements" in PR_LEVEL_SYSTEM
+
+
+def test_user_template_formats_cleanly():
+    from reviewer.prompts import USER_TEMPLATE
+    rendered = USER_TEMPLATE.format(
+        repo="owner/repo",
+        path="src/scheduler.py",
+        lang="python",
+        title="Update cron job to daily",
+        description="Requirement per ticket #123",
+        related_code_section="",
+        diff="+ schedule = '0 0 * * *'",
+    )
+    assert "Repository: owner/repo" in rendered
+    assert "Update cron job to daily" in rendered
+    assert "Assume intentionality for requirements" in rendered
+

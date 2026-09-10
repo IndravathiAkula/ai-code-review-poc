@@ -26,7 +26,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.fastmcp import FastMCP
+except Exception:
+    from mcp.server.mcpserver import MCPServer as FastMCP
 
 from . import review_patch
 from .providers import build_provider
